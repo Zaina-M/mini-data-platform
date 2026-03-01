@@ -7,26 +7,24 @@ with business logic validation and detailed reporting.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple, Any
 from enum import Enum
+from typing import Any, Dict, List, Tuple
 
 import pandas as pd
 import pandera as pa
-
+from utils.logging_config import get_logger
 from validation.schemas import (
-    RawSalesSchema,
     CleanedSalesSchema,
     EnrichedSalesSchema,
-    validate_dataframe,
-    VALID_COUNTRIES,
+    RawSalesSchema,
 )
-from utils.logging_config import get_logger
 
 logger = get_logger("validators")
 
 
 class ValidationStatus(Enum):
     """Enumeration of validation statuses."""
+
     PASSED = "passed"
     FAILED = "failed"
     WARNING = "warning"
@@ -37,7 +35,7 @@ class ValidationStatus(Enum):
 class ValidationResult:
     """
     Container for validation results with detailed reporting.
-    
+
     Attributes:
         status: Overall validation status
         is_valid: Boolean indicating if validation passed
@@ -50,6 +48,7 @@ class ValidationResult:
         duration_seconds: Time taken for validation
         metadata: Additional validation metadata
     """
+
     status: ValidationStatus
     is_valid: bool
     total_rows: int
@@ -60,7 +59,7 @@ class ValidationResult:
     schema_name: str = ""
     duration_seconds: float = 0.0
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert result to dictionary for serialization."""
         return {
@@ -77,7 +76,7 @@ class ValidationResult:
             "duration_seconds": round(self.duration_seconds, 4),
             "metadata": self.metadata,
         }
-    
+
     def __str__(self) -> str:
         return (
             f"ValidationResult(status={self.status.value}, "
@@ -89,52 +88,59 @@ class ValidationResult:
 class DataValidator:
     """
     High-level data validator combining Pandera schemas with business rules.
-    
+
     Provides comprehensive validation with detailed error reporting
     and support for multiple validation stages.
     """
-    
+
     def __init__(self, strict: bool = False):
         """
         Initialize validator.
-        
+
         Args:
             strict: If True, fail on warnings; if False, warnings are logged only
         """
         self.strict = strict
         self.validation_history: List[ValidationResult] = []
-    
+
     def validate_raw_data(self, df: pd.DataFrame, file_name: str = "") -> ValidationResult:
         """
         Validate raw sales data from CSV source.
-        
+
         Args:
             df: Raw DataFrame from CSV
             file_name: Source file name for logging
-            
+
         Returns:
             ValidationResult with validation details
         """
         start_time = datetime.now()
         logger.info(f"Starting raw data validation for {file_name}")
-        
+
         errors = []
         warnings = []
-        
+
         # Check required columns
         required_columns = [
-            "order_id", "product_name", "quantity", "unit_price",
-            "order_date", "customer_id", "country"
+            "order_id",
+            "product_name",
+            "quantity",
+            "unit_price",
+            "order_date",
+            "customer_id",
+            "country",
         ]
-        
+
         missing_columns = set(required_columns) - set(df.columns)
         if missing_columns:
-            errors.append({
-                "type": "missing_columns",
-                "columns": list(missing_columns),
-                "message": f"Missing required columns: {missing_columns}"
-            })
-            
+            errors.append(
+                {
+                    "type": "missing_columns",
+                    "columns": list(missing_columns),
+                    "message": f"Missing required columns: {missing_columns}",
+                }
+            )
+
             duration = (datetime.now() - start_time).total_seconds()
             result = ValidationResult(
                 status=ValidationStatus.FAILED,
@@ -145,12 +151,12 @@ class DataValidator:
                 errors=errors,
                 schema_name="RawSalesSchema",
                 duration_seconds=duration,
-                metadata={"file_name": file_name}
+                metadata={"file_name": file_name},
             )
             self.validation_history.append(result)
             logger.error(f"Raw validation failed: missing columns {missing_columns}")
             return result
-        
+
         # Run Pandera schema validation
         try:
             RawSalesSchema.validate(df, lazy=True)
@@ -158,19 +164,21 @@ class DataValidator:
         except pa.errors.SchemaErrors as e:
             schema_valid = False
             for _, row in e.failure_cases.iterrows():
-                errors.append({
-                    "type": "schema_error",
-                    "column": row.get("column"),
-                    "check": row.get("check"),
-                    "index": row.get("index"),
-                    "message": f"Column '{row.get('column')}' failed check: {row.get('check')}"
-                })
-        
+                errors.append(
+                    {
+                        "type": "schema_error",
+                        "column": row.get("column"),
+                        "check": row.get("check"),
+                        "index": row.get("index"),
+                        "message": f"Column '{row.get('column')}' failed check: {row.get('check')}",
+                    }
+                )
+
         # Additional business rule checks
         warnings.extend(self._check_raw_business_rules(df))
-        
+
         duration = (datetime.now() - start_time).total_seconds()
-        
+
         result = ValidationResult(
             status=ValidationStatus.PASSED if schema_valid else ValidationStatus.FAILED,
             is_valid=schema_valid,
@@ -181,34 +189,32 @@ class DataValidator:
             warnings=warnings,
             schema_name="RawSalesSchema",
             duration_seconds=duration,
-            metadata={"file_name": file_name}
+            metadata={"file_name": file_name},
         )
-        
+
         self.validation_history.append(result)
         logger.info(f"Raw validation completed: {result}")
         return result
-    
+
     def validate_cleaned_data(
-        self,
-        df: pd.DataFrame,
-        original_count: int = 0
+        self, df: pd.DataFrame, original_count: int = 0
     ) -> Tuple[ValidationResult, pd.DataFrame]:
         """
         Validate cleaned sales data.
-        
+
         Args:
             df: Cleaned DataFrame
             original_count: Original row count before cleaning
-            
+
         Returns:
             Tuple of (ValidationResult, validated DataFrame)
         """
         start_time = datetime.now()
-        logger.info(f"Starting cleaned data validation")
-        
+        logger.info("Starting cleaned data validation")
+
         errors = []
         warnings = []
-        
+
         # Run Pandera schema validation
         try:
             validated_df = CleanedSalesSchema.validate(df, lazy=True)
@@ -217,14 +223,16 @@ class DataValidator:
             validated_df = df
             is_valid = False
             for _, row in e.failure_cases.iterrows():
-                errors.append({
-                    "type": "schema_error",
-                    "column": row.get("column"),
-                    "check": row.get("check"),
-                    "index": row.get("index"),
-                    "failure_case": str(row.get("failure_case"))[:100]
-                })
-        
+                errors.append(
+                    {
+                        "type": "schema_error",
+                        "column": row.get("column"),
+                        "check": row.get("check"),
+                        "index": row.get("index"),
+                        "failure_case": str(row.get("failure_case"))[:100],
+                    }
+                )
+
         # Check data loss ratio
         if original_count > 0:
             loss_ratio = 1 - (len(df) / original_count)
@@ -233,12 +241,12 @@ class DataValidator:
                     f"High data loss during cleaning: {loss_ratio:.1%} "
                     f"({original_count - len(df)} of {original_count} rows)"
                 )
-        
+
         # Additional quality checks
         warnings.extend(self._check_cleaned_quality(df))
-        
+
         duration = (datetime.now() - start_time).total_seconds()
-        
+
         result = ValidationResult(
             status=ValidationStatus.PASSED if is_valid else ValidationStatus.FAILED,
             is_valid=is_valid,
@@ -249,39 +257,41 @@ class DataValidator:
             warnings=warnings,
             schema_name="CleanedSalesSchema",
             duration_seconds=duration,
-            metadata={"original_count": original_count, "cleaned_count": len(df)}
+            metadata={"original_count": original_count, "cleaned_count": len(df)},
         )
-        
+
         self.validation_history.append(result)
         logger.info(f"Cleaned validation completed: {result}")
         return result, validated_df
-    
+
     def validate_enriched_data(self, df: pd.DataFrame) -> Tuple[ValidationResult, pd.DataFrame]:
         """
         Validate enriched sales data ready for loading.
-        
+
         Args:
             df: Enriched DataFrame with calculated fields
-            
+
         Returns:
             Tuple of (ValidationResult, validated DataFrame)
         """
         start_time = datetime.now()
-        logger.info(f"Starting enriched data validation")
-        
+        logger.info("Starting enriched data validation")
+
         errors = []
         warnings = []
-        
+
         # Verify required enrichment columns exist
         enrichment_columns = ["total_amount", "ingestion_timestamp"]
         missing = set(enrichment_columns) - set(df.columns)
         if missing:
-            errors.append({
-                "type": "missing_enrichment",
-                "columns": list(missing),
-                "message": f"Missing enrichment columns: {missing}"
-            })
-        
+            errors.append(
+                {
+                    "type": "missing_enrichment",
+                    "columns": list(missing),
+                    "message": f"Missing enrichment columns: {missing}",
+                }
+            )
+
         # Run Pandera schema validation
         try:
             validated_df = EnrichedSalesSchema.validate(df, lazy=True)
@@ -290,29 +300,33 @@ class DataValidator:
             validated_df = df
             is_valid = False
             for _, row in e.failure_cases.iterrows():
-                errors.append({
-                    "type": "schema_error",
-                    "column": row.get("column"),
-                    "check": row.get("check"),
-                    "index": row.get("index")
-                })
-        
+                errors.append(
+                    {
+                        "type": "schema_error",
+                        "column": row.get("column"),
+                        "check": row.get("check"),
+                        "index": row.get("index"),
+                    }
+                )
+
         # Verify total_amount calculation
         if "total_amount" in df.columns:
             expected_total = df["quantity"] * df["unit_price"]
             mismatch = (df["total_amount"] - expected_total).abs() > 0.01
             mismatch_count = mismatch.sum()
             if mismatch_count > 0:
-                errors.append({
-                    "type": "calculation_error",
-                    "column": "total_amount",
-                    "count": int(mismatch_count),
-                    "message": f"{mismatch_count} rows have incorrect total_amount calculation"
-                })
+                errors.append(
+                    {
+                        "type": "calculation_error",
+                        "column": "total_amount",
+                        "count": int(mismatch_count),
+                        "message": f"{mismatch_count} rows have incorrect total_amount calculation",
+                    }
+                )
                 is_valid = False
-        
+
         duration = (datetime.now() - start_time).total_seconds()
-        
+
         result = ValidationResult(
             status=ValidationStatus.PASSED if is_valid else ValidationStatus.FAILED,
             is_valid=is_valid,
@@ -323,38 +337,43 @@ class DataValidator:
             warnings=warnings,
             schema_name="EnrichedSalesSchema",
             duration_seconds=duration,
-            metadata={"total_revenue": float(df["total_amount"].sum()) if "total_amount" in df.columns else 0}
+            metadata={
+                "total_revenue": (
+                    float(df["total_amount"].sum()) if "total_amount" in df.columns else 0
+                )
+            },
         )
-        
+
         self.validation_history.append(result)
         logger.info(f"Enriched validation completed: {result}")
         return result, validated_df
-    
+
     def _check_raw_business_rules(self, df: pd.DataFrame) -> List[str]:
         """Check business rules on raw data."""
         warnings = []
-        
+
         # Check for unusual patterns
         if df["quantity"].dtype == object:
             non_numeric = df["quantity"].apply(
-                lambda x: not str(x).replace("-", "").replace(".", "").isdigit()
-                if pd.notna(x) else False
+                lambda x: (
+                    not str(x).replace("-", "").replace(".", "").isdigit() if pd.notna(x) else False
+                )
             )
             non_numeric_count = non_numeric.sum()
             if non_numeric_count > 0:
                 warnings.append(f"{non_numeric_count} rows have non-numeric quantity values")
-        
+
         # Check for empty order_ids
         empty_orders = df["order_id"].isna().sum() + (df["order_id"] == "").sum()
         if empty_orders > 0:
             warnings.append(f"{empty_orders} rows have empty order_id")
-        
+
         return warnings
-    
+
     def _check_cleaned_quality(self, df: pd.DataFrame) -> List[str]:
         """Check quality metrics on cleaned data."""
         warnings = []
-        
+
         # Check for suspicious patterns
         unknown_customers = (df["customer_id"] == "UNKNOWN").sum()
         if unknown_customers > len(df) * 0.1:
@@ -362,30 +381,30 @@ class DataValidator:
                 f"High unknown customer rate: {unknown_customers} "
                 f"({unknown_customers / len(df):.1%})"
             )
-        
+
         unknown_countries = (df["country"] == "Unknown").sum()
         if unknown_countries > len(df) * 0.1:
             warnings.append(
                 f"High unknown country rate: {unknown_countries} "
                 f"({unknown_countries / len(df):.1%})"
             )
-        
+
         # Check for date range reasonableness
         if "order_date" in df.columns:
             date_range = (df["order_date"].max() - df["order_date"].min()).days
             if date_range > 365:
                 warnings.append(f"Date range spans {date_range} days - verify data freshness")
-        
+
         return warnings
-    
+
     def get_validation_summary(self) -> Dict[str, Any]:
         """Get summary of all validation runs."""
         if not self.validation_history:
             return {"total_validations": 0}
-        
+
         passed = sum(1 for r in self.validation_history if r.is_valid)
         failed = len(self.validation_history) - passed
-        
+
         return {
             "total_validations": len(self.validation_history),
             "passed": passed,

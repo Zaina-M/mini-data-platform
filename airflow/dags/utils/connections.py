@@ -7,7 +7,7 @@ Implements connection pooling and proper error handling.
 
 import os
 from contextlib import contextmanager
-from typing import Generator, Optional
+from typing import Generator
 
 from .logging_config import get_logger
 
@@ -16,13 +16,13 @@ logger = get_logger("connections")
 
 class ConnectionConfig:
     """Configuration dataclass for connection settings."""
-    
+
     # MinIO settings
     MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
     MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
     MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
     MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
-    
+
     # PostgreSQL settings
     POSTGRES_HOST = os.getenv("POSTGRES_HOST", "analytics-db")
     POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
@@ -34,22 +34,22 @@ class ConnectionConfig:
 def get_minio_client():
     """
     Initialize and return MinIO client.
-    
+
     Returns:
         Minio: Configured MinIO client instance
-        
+
     Raises:
         ImportError: If minio package is not installed
         Exception: If connection fails
     """
     from minio import Minio
-    
+
     try:
         client = Minio(
             ConnectionConfig.MINIO_ENDPOINT,
             access_key=ConnectionConfig.MINIO_ACCESS_KEY,
             secret_key=ConnectionConfig.MINIO_SECRET_KEY,
-            secure=ConnectionConfig.MINIO_SECURE
+            secure=ConnectionConfig.MINIO_SECURE,
         )
         logger.debug(f"MinIO client created for endpoint: {ConnectionConfig.MINIO_ENDPOINT}")
         return client
@@ -61,23 +61,23 @@ def get_minio_client():
 def get_postgres_connection():
     """
     Create PostgreSQL connection using psycopg2.
-    
+
     Returns:
         connection: psycopg2 connection object
-        
+
     Raises:
         ImportError: If psycopg2 package is not installed
         Exception: If connection fails
     """
     import psycopg2
-    
+
     try:
         conn = psycopg2.connect(
             host=ConnectionConfig.POSTGRES_HOST,
             port=ConnectionConfig.POSTGRES_PORT,
             database=ConnectionConfig.POSTGRES_DB,
             user=ConnectionConfig.POSTGRES_USER,
-            password=ConnectionConfig.POSTGRES_PASSWORD
+            password=ConnectionConfig.POSTGRES_PASSWORD,
         )
         logger.debug(
             f"PostgreSQL connection established to "
@@ -94,11 +94,11 @@ def postgres_connection() -> Generator:
     """
     Context manager for PostgreSQL connections.
     Automatically handles commit/rollback and connection cleanup.
-    
+
     Usage:
         with postgres_connection() as (conn, cursor):
             cursor.execute("SELECT * FROM sales")
-            
+
     Yields:
         tuple: (connection, cursor) objects
     """
@@ -127,11 +127,11 @@ def postgres_connection() -> Generator:
 def minio_client() -> Generator:
     """
     Context manager for MinIO client.
-    
+
     Usage:
         with minio_client() as client:
             objects = client.list_objects("bucket")
-            
+
     Yields:
         Minio: MinIO client instance
     """
@@ -146,7 +146,7 @@ def minio_client() -> Generator:
 def check_minio_health() -> bool:
     """
     Check if MinIO service is accessible.
-    
+
     Returns:
         bool: True if MinIO is accessible
     """
@@ -163,7 +163,7 @@ def check_minio_health() -> bool:
 def check_postgres_health() -> bool:
     """
     Check if PostgreSQL service is accessible.
-    
+
     Returns:
         bool: True if PostgreSQL is accessible
     """

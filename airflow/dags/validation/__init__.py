@@ -7,9 +7,9 @@ This package contains:
 """
 
 from .schemas import (
-    RawSalesSchema,
     CleanedSalesSchema,
     EnrichedSalesSchema,
+    RawSalesSchema,
     validate_dataframe,
 )
 from .validators import DataValidator, ValidationResult

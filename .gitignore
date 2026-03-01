@@ -1,0 +1,51 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Airflow
+airflow/logs/*
+!airflow/logs/.gitkeep
+airflow/plugins/__pycache__/
+*.pyc
+
+# Docker
+.docker/
+
+# Data files
+*.csv
+!data-generator/sample/*.csv
+data-generator/*.csv
+
+# Generated sales data (keep folder, ignore CSVs)
+data/output/*.csv
+!data/output/.gitkeep
+
+
+
+
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+pytest.ini
+pyproject.toml
+logs
+data
+

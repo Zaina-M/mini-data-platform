@@ -6,8 +6,8 @@ This package contains utility modules for:
 - Database and storage connections
 """
 
-from .logging_config import get_logger, setup_logging
 from .connections import get_minio_client, get_postgres_connection
+from .logging_config import get_logger, setup_logging
 
 __all__ = [
     "get_logger",
