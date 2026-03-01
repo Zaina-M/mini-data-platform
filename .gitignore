@@ -44,8 +44,6 @@ data/output/*.csv
 .coverage
 htmlcov/
 .tox/
-pytest.ini
-pyproject.toml
 logs
 data
 
