@@ -1,0 +1,31 @@
+# Test Requirements for Mini Data Platform
+# Install with: pip install -r requirements.txt
+
+# Testing framework
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-xdist>=3.5.0  # Parallel test execution
+
+# Data validation
+pandera>=0.18.0
+
+# Data processing (should match airflow environment)
+pandas>=2.0.0
+numpy>=1.24.0
+
+# External services clients (for mocking)
+minio>=7.2.0
+psycopg2-binary>=2.9.0
+
+# Airflow (for DAG validation)
+apache-airflow>=2.8.0
+
+# Code quality
+flake8>=6.0.0
+black>=23.0.0
+isort>=5.12.0
+mypy>=1.5.0
+
+# Typing
+types-python-dateutil
+pandas-stubs
