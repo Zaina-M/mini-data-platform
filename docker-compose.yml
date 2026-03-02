@@ -1,7 +1,10 @@
 version: '3.8'
 
 x-airflow-common: &airflow-common
-  image: apache/airflow:2.8.1-python3.11
+  build:
+    context: ./airflow
+    dockerfile: Dockerfile
+  image: mini-data-platform-airflow:latest
   environment:
     - AIRFLOW__CORE__EXECUTOR=LocalExecutor
     - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${AIRFLOW_DB_USER}:${AIRFLOW_DB_PASSWORD}@airflow-db:5432/${AIRFLOW_DB_NAME}
@@ -117,7 +120,7 @@ services:
   airflow-webserver:
     <<: *airflow-common
     container_name: airflow-webserver
-    command: bash -c "pip install minio pandas psycopg2-binary pandera && airflow users create --username ${AIRFLOW_ADMIN_USER} --password ${AIRFLOW_ADMIN_PASSWORD} --firstname Admin --lastname User --role Admin --email admin@example.com || true && airflow webserver"
+    command: bash -c "airflow users create --username ${AIRFLOW_ADMIN_USER} --password ${AIRFLOW_ADMIN_PASSWORD} --firstname Admin --lastname User --role Admin --email admin@example.com || true && airflow webserver"
     ports:
       - "8080:8080"
     healthcheck:
@@ -133,7 +136,7 @@ services:
   airflow-scheduler:
     <<: *airflow-common
     container_name: airflow-scheduler
-    command: bash -c "pip install minio pandas psycopg2-binary pandera && airflow scheduler"
+    command: airflow scheduler
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -146,7 +149,6 @@ services:
       /bin/bash -c "
       airflow db init &&
       airflow users create --username ${AIRFLOW_ADMIN_USER} --password ${AIRFLOW_ADMIN_PASSWORD} --firstname Admin --lastname User --role Admin --email admin@example.com || true &&
-      pip install minio pandas psycopg2-binary pandera &&
       echo 'Airflow initialized successfully'
       "
     depends_on:
