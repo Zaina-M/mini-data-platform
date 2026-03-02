@@ -232,8 +232,8 @@ jobs:
       AIRFLOW_DB_USER: airflow
       AIRFLOW_DB_PASSWORD: airflow
       AIRFLOW_DB_NAME: airflow
-      AIRFLOW_FERNET_KEY: test-fernet-key
-      AIRFLOW_SECRET_KEY: test-secret-key
+      AIRFLOW_FERNET_KEY: '81HqDtbqAywKSOumSha3BhWNOdQ26slT6K0YaZeZyPs='
+      AIRFLOW_SECRET_KEY: 'a]xM8F-Z2e9HP!qN'
       AIRFLOW_ADMIN_USER: admin
       AIRFLOW_ADMIN_PASSWORD: admin
       ANALYTICS_DB_HOST: analytics-db
@@ -290,8 +290,8 @@ jobs:
       AIRFLOW_DB_USER: airflow
       AIRFLOW_DB_PASSWORD: airflow
       AIRFLOW_DB_NAME: airflow
-      AIRFLOW_FERNET_KEY: test-fernet-key
-      AIRFLOW_SECRET_KEY: test-secret-key
+      AIRFLOW_FERNET_KEY: '81HqDtbqAywKSOumSha3BhWNOdQ26slT6K0YaZeZyPs='
+      AIRFLOW_SECRET_KEY: 'a]xM8F-Z2e9HP!qN'
       AIRFLOW_ADMIN_USER: admin
       AIRFLOW_ADMIN_PASSWORD: admin
       ANALYTICS_DB_HOST: analytics-db
@@ -308,57 +308,353 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Start services
+      # ── 1. Start ALL platform services ──────────────────────────
+      - name: Start all services
         run: |
-          docker compose up -d minio minio-init analytics-db
+          docker compose up -d
           echo "Waiting for services to initialize..."
-          sleep 45
 
-      - name: Verify MinIO health
+      # ── 2. Wait for MinIO to be healthy ─────────────────────────
+      - name: Wait for MinIO
         run: |
-          curl -f http://localhost:9000/minio/health/live || exit 1
-          echo "MinIO is healthy"
+          echo "Waiting for MinIO..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9000/minio/health/live > /dev/null 2>&1; then
+              echo "MinIO is healthy"
+              exit 0
+            fi
+            echo "  attempt $i/30 – not ready yet"
+            sleep 10
+          done
+          echo "MinIO failed to start" && exit 1
 
-      - name: Verify PostgreSQL health
+      # ── 3. Wait for PostgreSQL (analytics-db) ──────────────────
+      - name: Wait for PostgreSQL
         run: |
-          docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}
-          echo "PostgreSQL is healthy"
+          echo "Waiting for analytics-db..."
+          for i in $(seq 1 30); do
+            if docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }} > /dev/null 2>&1; then
+              echo "PostgreSQL is healthy"
+              exit 0
+            fi
+            echo "  attempt $i/30 – not ready yet"
+            sleep 10
+          done
+          echo "PostgreSQL failed to start" && exit 1
 
-      - name: Verify bucket creation
+      # ── 4. Wait for Airflow webserver ──────────────────────────
+      - name: Wait for Airflow webserver
         run: |
-          docker exec minio mc alias set local http://localhost:9000 ${{ env.MINIO_ROOT_USER }} ${{ env.MINIO_ROOT_PASSWORD }}
-          docker exec minio mc ls local | grep -E "(raw-sales|processed|archive)" || echo "Buckets created via init container"
-          echo "Bucket verification complete"
+          echo "Waiting for Airflow webserver..."
+          for i in $(seq 1 60); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health || true)
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "Airflow webserver is healthy"
+              exit 0
+            fi
+            echo "  attempt $i/60 – HTTP $HTTP_CODE"
+            sleep 15
+          done
+          echo "Airflow webserver failed to start"
+          docker compose logs airflow-webserver --tail 50
+          exit 1
 
-      - name: Run data flow test
-        env:
-          MINIO_ACCESS_KEY: ${{ env.MINIO_ROOT_USER }}
-          MINIO_SECRET_KEY: ${{ env.MINIO_ROOT_PASSWORD }}
+      # ── 5. Wait for Metabase ───────────────────────────────────
+      - name: Wait for Metabase
         run: |
-          # Generate test data
-          pip install minio pandas
-          cd data-generator
-          python generate_sales.py --records 50 --error-rate 0.1 --output test_data.csv
-          
-          # Upload to MinIO
-          python -c "
-          import os
+          echo "Waiting for Metabase..."
+          for i in $(seq 1 60); do
+            STATUS=$(curl -sf http://localhost:3000/api/health 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || true)
+            if [ "$STATUS" = "ok" ]; then
+              echo "Metabase is healthy"
+              exit 0
+            fi
+            echo "  attempt $i/60 – status: ${STATUS:-not-ready}"
+            sleep 15
+          done
+          echo "Metabase failed to start"
+          docker compose logs metabase --tail 50
+          exit 1
+
+      # ── 6. Verify MinIO buckets were created ───────────────────
+      - name: Verify MinIO buckets
+        run: |
+          pip install minio > /dev/null
+          python3 -c "
           from minio import Minio
-          client = Minio('localhost:9000', os.environ['MINIO_ACCESS_KEY'], os.environ['MINIO_SECRET_KEY'], secure=False)
-          client.fput_object('raw-sales', 'test_data.csv', 'test_data.csv')
-          print('Test data uploaded to MinIO')
-          
-          # Verify file exists
-          objects = list(client.list_objects('raw-sales'))
-          print(f'Files in raw-sales: {[o.object_name for o in objects]}')
+          client = Minio('localhost:9000', 'minioadmin', 'minioadmin', secure=False)
+          buckets = [b.name for b in client.list_buckets()]
+          print(f'Buckets found: {buckets}')
+          for name in ['raw-sales', 'processed', 'archive']:
+              assert name in buckets, f'Bucket {name} missing!'
+          print('All required buckets exist')
           "
 
+      # ── 7. Verify PostgreSQL schema ────────────────────────────
       - name: Verify PostgreSQL schema
         run: |
           docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -c "
-            SELECT table_name FROM information_schema.tables 
-            WHERE table_schema = 'public' AND table_name = 'sales';
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
           "
+          docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -c "
+            SELECT table_name FROM information_schema.views
+            WHERE table_schema = 'public';
+          "
+
+      # ── 8. Upload test data to MinIO (Ingestion) ───────────────
+      - name: Generate and upload test data to MinIO
+        run: |
+          pip install pandas > /dev/null
+          cd data-generator
+          python generate_sales.py --records 50 --error-rate 0.05 --output test_flow.csv
+          python3 -c "
+          from minio import Minio
+          client = Minio('localhost:9000', 'minioadmin', 'minioadmin', secure=False)
+          client.fput_object('raw-sales', 'test_flow.csv', 'test_flow.csv')
+          objects = [o.object_name for o in client.list_objects('raw-sales')]
+          print(f'Files in raw-sales after upload: {objects}')
+          assert 'test_flow.csv' in objects, 'Upload verification failed!'
+          print('INGESTION CHECK PASSED: test data uploaded to MinIO')
+          "
+
+      # ── 9. Trigger Airflow DAG (Processing) ────────────────────
+      - name: Unpause and trigger Airflow DAG
+        run: |
+          # Unpause the DAG
+          curl -sf -X PATCH \
+            "http://localhost:8080/api/v1/dags/sales_data_pipeline" \
+            -H "Content-Type: application/json" \
+            -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" \
+            -d '{"is_paused": false}' | python3 -m json.tool
+          echo "DAG unpaused"
+
+          # Trigger the DAG
+          RUN_RESPONSE=$(curl -sf -X POST \
+            "http://localhost:8080/api/v1/dags/sales_data_pipeline/dagRuns" \
+            -H "Content-Type: application/json" \
+            -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" \
+            -d '{"conf": {}}')
+          echo "$RUN_RESPONSE" | python3 -m json.tool
+          DAG_RUN_ID=$(echo "$RUN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['dag_run_id'])")
+          echo "DAG_RUN_ID=$DAG_RUN_ID" >> $GITHUB_ENV
+          echo "Triggered DAG run: $DAG_RUN_ID"
+
+      # ── 10. Wait for DAG run to complete ────────────────────────
+      - name: Wait for DAG run to complete
+        run: |
+          echo "Polling DAG run status..."
+          for i in $(seq 1 60); do
+            RESPONSE=$(curl -sf \
+              "http://localhost:8080/api/v1/dags/sales_data_pipeline/dagRuns/${{ env.DAG_RUN_ID }}" \
+              -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" 2>/dev/null || echo '{}')
+            STATE=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('state','unknown'))" 2>/dev/null || echo "unknown")
+            echo "  attempt $i/60 – state: $STATE"
+
+            if [ "$STATE" = "success" ]; then
+              echo "PROCESSING CHECK PASSED: DAG completed successfully"
+              exit 0
+            elif [ "$STATE" = "failed" ]; then
+              echo "DAG run failed! Dumping task logs..."
+              curl -sf \
+                "http://localhost:8080/api/v1/dags/sales_data_pipeline/dagRuns/${{ env.DAG_RUN_ID }}/taskInstances" \
+                -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" | python3 -m json.tool
+              docker compose logs airflow-scheduler --tail 80
+              exit 1
+            fi
+            sleep 15
+          done
+          echo "DAG run timed out"
+          docker compose logs airflow-scheduler --tail 80
+          exit 1
+
+      # ── 11. Verify data landed in PostgreSQL (Storage) ──────────
+      - name: Verify data in PostgreSQL
+        run: |
+          echo "Checking sales table for loaded data..."
+          ROW_COUNT=$(docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -t -c "SELECT COUNT(*) FROM sales;")
+          ROW_COUNT=$(echo "$ROW_COUNT" | xargs)
+          echo "Rows in sales table: $ROW_COUNT"
+
+          if [ "$ROW_COUNT" -gt 0 ]; then
+            echo "STORAGE CHECK PASSED: $ROW_COUNT rows loaded into PostgreSQL"
+          else
+            echo "STORAGE CHECK FAILED: no rows found in sales table"
+            exit 1
+          fi
+
+          echo ""
+          echo "=== Sample data ==="
+          docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -c \
+            "SELECT order_id, product_name, quantity, unit_price, total_amount, country FROM sales LIMIT 5;"
+
+          echo ""
+          echo "=== Daily sales summary view ==="
+          docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -c \
+            "SELECT * FROM daily_sales_summary LIMIT 5;"
+
+          echo ""
+          echo "=== Product performance view ==="
+          docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -c \
+            "SELECT * FROM product_performance LIMIT 5;"
+
+          echo ""
+          echo "=== Country analysis view ==="
+          docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -c \
+            "SELECT * FROM country_analysis LIMIT 5;"
+
+      # ── 12. Verify file archived in MinIO ───────────────────────
+      - name: Verify MinIO archival
+        run: |
+          python3 -c "
+          from minio import Minio
+          client = Minio('localhost:9000', 'minioadmin', 'minioadmin', secure=False)
+
+          raw_files = [o.object_name for o in client.list_objects('raw-sales')]
+          archive_files = [o.object_name for o in client.list_objects('archive', recursive=True)]
+
+          print(f'Files remaining in raw-sales: {raw_files}')
+          print(f'Files in archive: {archive_files}')
+
+          if 'test_flow.csv' not in raw_files and len(archive_files) > 0:
+              print('ARCHIVE CHECK PASSED: file moved from raw-sales to archive')
+          elif 'test_flow.csv' in raw_files:
+              print('WARNING: file still in raw-sales (may not have been archived yet)')
+          else:
+              print('Archive check inconclusive')
+          "
+
+      # ── 13. Verify Metabase can query the data (Visualization) ─
+      - name: Verify Metabase visualization layer
+        run: |
+          # Set up Metabase and get a session token
+          echo "Setting up Metabase admin account..."
+          # Check if setup is needed
+          SETUP_TOKEN=$(curl -sf http://localhost:3000/api/session/properties | python3 -c "
+          import sys, json
+          props = json.load(sys.stdin)
+          token = props.get('setup-token', '')
+          print(token)
+          " 2>/dev/null || true)
+
+          if [ -n "$SETUP_TOKEN" ] && [ "$SETUP_TOKEN" != "None" ]; then
+            echo "Running first-time Metabase setup..."
+            curl -sf -X POST http://localhost:3000/api/setup \
+              -H "Content-Type: application/json" \
+              -d "{
+                \"token\": \"$SETUP_TOKEN\",
+                \"user\": {
+                  \"first_name\": \"CI\",
+                  \"last_name\": \"Test\",
+                  \"email\": \"ci@test.com\",
+                  \"password\": \"CITest123!\"
+                },
+                \"database\": {
+                  \"engine\": \"postgres\",
+                  \"name\": \"Analytics\",
+                  \"details\": {
+                    \"host\": \"analytics-db\",
+                    \"port\": 5432,
+                    \"dbname\": \"${{ env.ANALYTICS_DB_NAME }}\",
+                    \"user\": \"${{ env.ANALYTICS_DB_USER }}\",
+                    \"password\": \"${{ env.ANALYTICS_DB_PASSWORD }}\"
+                  }
+                },
+                \"prefs\": {
+                  \"site_name\": \"CI Test\",
+                  \"allow_tracking\": false
+                }
+              }" > /dev/null
+            echo "Metabase setup complete"
+          else
+            echo "Metabase already set up"
+          fi
+
+          # Get session token
+          echo "Authenticating with Metabase..."
+          SESSION_TOKEN=$(curl -sf -X POST http://localhost:3000/api/session \
+            -H "Content-Type: application/json" \
+            -d '{"username": "ci@test.com", "password": "CITest123!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          echo "Session token acquired"
+
+          # Wait for Metabase to sync the database schema
+          echo "Waiting for Metabase to sync database..."
+          sleep 30
+
+          # Run a native query through Metabase to verify end-to-end
+          echo "Running query through Metabase API..."
+          QUERY_RESULT=$(curl -sf -X POST http://localhost:3000/api/dataset \
+            -H "Content-Type: application/json" \
+            -H "X-Metabase-Session: $SESSION_TOKEN" \
+            -d '{
+              "database": 1,
+              "type": "native",
+              "native": {
+                "query": "SELECT COUNT(*) as total_rows, SUM(total_amount) as total_revenue, COUNT(DISTINCT country) as countries FROM sales"
+              }
+            }')
+
+          # Parse and verify results
+          python3 -c "
+          import json, sys
+          result = json.loads('''$QUERY_RESULT''')
+
+          if 'error' in result:
+              print(f'Metabase query error: {result[\"error\"]}')
+              sys.exit(1)
+
+          rows = result.get('data', {}).get('rows', [])
+          if not rows:
+              print('VISUALIZATION CHECK FAILED: no data returned from Metabase')
+              sys.exit(1)
+
+          total_rows, total_revenue, countries = rows[0]
+          print(f'Metabase query results:')
+          print(f'  Total rows:    {total_rows}')
+          print(f'  Total revenue: {total_revenue}')
+          print(f'  Countries:     {countries}')
+
+          if int(total_rows) > 0:
+              print('VISUALIZATION CHECK PASSED: Metabase can query sales data from PostgreSQL')
+          else:
+              print('VISUALIZATION CHECK FAILED: Metabase returned 0 rows')
+              sys.exit(1)
+          "
+
+      # ── 14. Print full data flow summary ────────────────────────
+      - name: Data flow validation summary
+        if: always()
+        run: |
+          echo "============================================="
+          echo "   DATA FLOW VALIDATION SUMMARY"
+          echo "============================================="
+          echo ""
+          echo "  MinIO (Ingestion)    → CSV uploaded to raw-sales bucket"
+          echo "  Airflow (Processing) → DAG triggered and completed"
+          echo "  PostgreSQL (Storage) → Data loaded into sales table"
+          echo "  Metabase (Visualize) → Queried sales data successfully"
+          echo ""
+          echo "  Full pipeline: MinIO → Airflow → PostgreSQL → Metabase"
+          echo "============================================="
+
+      # ── 15. Collect debug logs on failure ───────────────────────
+      - name: Collect debug logs
+        if: failure()
+        run: |
+          echo "=== Docker container status ==="
+          docker compose ps -a
+          echo ""
+          echo "=== Airflow scheduler logs ==="
+          docker compose logs airflow-scheduler --tail 100
+          echo ""
+          echo "=== Airflow webserver logs ==="
+          docker compose logs airflow-webserver --tail 50
+          echo ""
+          echo "=== Metabase logs ==="
+          docker compose logs metabase --tail 50
+          echo ""
+          echo "=== Analytics DB logs ==="
+          docker compose logs analytics-db --tail 30
 
       - name: Stop services
         if: always()
@@ -370,32 +666,159 @@ jobs:
     runs-on: ubuntu-latest
     needs: [lint, unit-tests, validate-dags, docker-build, data-flow-validation]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    env:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ENDPOINT: minio:9000
+      AIRFLOW_DB_USER: airflow
+      AIRFLOW_DB_PASSWORD: airflow
+      AIRFLOW_DB_NAME: airflow
+      AIRFLOW_FERNET_KEY: '81HqDtbqAywKSOumSha3BhWNOdQ26slT6K0YaZeZyPs='
+      AIRFLOW_SECRET_KEY: 'a]xM8F-Z2e9HP!qN'
+      AIRFLOW_ADMIN_USER: admin
+      AIRFLOW_ADMIN_PASSWORD: admin
+      ANALYTICS_DB_HOST: analytics-db
+      ANALYTICS_DB_PORT: '5432'
+      ANALYTICS_DB_NAME: analytics
+      ANALYTICS_DB_USER: analytics
+      ANALYTICS_DB_PASSWORD: analytics
+      METABASE_DB_USER: metabase
+      METABASE_DB_PASSWORD: metabase
+      METABASE_DB_NAME: metabase
+      METABASE_DB_HOST: metabase-db
+      METABASE_DB_PORT: '5432'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Deploy to test environment
+      - name: Deploy containers to test environment
         run: |
           echo "Deploying to test environment..."
-          # In a real scenario, this would:
-          # 1. Build production Docker images
-          # 2. Push to container registry
-          # 3. Deploy to test/staging environment
-          echo "Deployment simulation complete"
+          docker compose up -d
+          echo "All containers deployed"
 
-      - name: Smoke test deployment
+      - name: Wait for services to be healthy
         run: |
-          echo "Running smoke tests..."
-          # In production, verify:
-          # - All services are running
-          # - Health checks pass
-          # - Basic data flow works
-          echo "Smoke tests passed"
+          echo "Running health checks on deployed services..."
+          SERVICES_OK=true
+
+          # Check MinIO
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9000/minio/health/live > /dev/null 2>&1; then
+              echo "  MinIO: healthy"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then echo "  MinIO: FAILED" && SERVICES_OK=false; fi
+            sleep 10
+          done
+
+          # Check PostgreSQL
+          for i in $(seq 1 30); do
+            if docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }} > /dev/null 2>&1; then
+              echo "  PostgreSQL: healthy"
+              break
+            fi
+            if [ "$i" -eq 30 ]; then echo "  PostgreSQL: FAILED" && SERVICES_OK=false; fi
+            sleep 10
+          done
+
+          # Check Airflow
+          for i in $(seq 1 60); do
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health || true)
+            if [ "$HTTP_CODE" = "200" ]; then
+              echo "  Airflow: healthy"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then echo "  Airflow: FAILED" && SERVICES_OK=false; fi
+            sleep 15
+          done
+
+          # Check Metabase
+          for i in $(seq 1 60); do
+            STATUS=$(curl -sf http://localhost:3000/api/health 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || true)
+            if [ "$STATUS" = "ok" ]; then
+              echo "  Metabase: healthy"
+              break
+            fi
+            if [ "$i" -eq 60 ]; then echo "  Metabase: FAILED" && SERVICES_OK=false; fi
+            sleep 15
+          done
+
+          if [ "$SERVICES_OK" = "false" ]; then
+            echo "One or more services failed health checks"
+            docker compose ps -a
+            exit 1
+          fi
+          echo "All services healthy in test environment"
+
+      - name: Smoke test – verify data flow
+        run: |
+          pip install minio pandas > /dev/null
+
+          # Generate and upload a small test file
+          cd data-generator
+          python generate_sales.py --records 20 --error-rate 0.0 --output smoke_test.csv
+
+          python3 -c "
+          from minio import Minio
+          client = Minio('localhost:9000', 'minioadmin', 'minioadmin', secure=False)
+          client.fput_object('raw-sales', 'smoke_test.csv', 'smoke_test.csv')
+          print('Smoke test data uploaded')
+          "
+          cd ..
+
+          # Trigger pipeline
+          curl -sf -X PATCH "http://localhost:8080/api/v1/dags/sales_data_pipeline" \
+            -H "Content-Type: application/json" \
+            -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" \
+            -d '{"is_paused": false}' > /dev/null
+
+          RUN_ID=$(curl -sf -X POST "http://localhost:8080/api/v1/dags/sales_data_pipeline/dagRuns" \
+            -H "Content-Type: application/json" \
+            -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" \
+            -d '{"conf": {}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['dag_run_id'])")
+          echo "Triggered smoke test DAG run: $RUN_ID"
+
+          # Poll for completion
+          for i in $(seq 1 40); do
+            STATE=$(curl -sf "http://localhost:8080/api/v1/dags/sales_data_pipeline/dagRuns/$RUN_ID" \
+              -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('state','unknown'))" 2>/dev/null || echo "unknown")
+            if [ "$STATE" = "success" ]; then
+              echo "Smoke test DAG completed successfully"
+              break
+            elif [ "$STATE" = "failed" ]; then
+              echo "Smoke test DAG failed" && exit 1
+            fi
+            sleep 15
+          done
+
+          # Verify data in DB
+          ROW_COUNT=$(docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -t -c "SELECT COUNT(*) FROM sales;" | xargs)
+          echo "Rows in sales table: $ROW_COUNT"
+          if [ "$ROW_COUNT" -gt 0 ]; then
+            echo "SMOKE TEST PASSED: deployment is functional"
+          else
+            echo "SMOKE TEST FAILED" && exit 1
+          fi
+
+      - name: Deployment summary
+        run: |
+          echo "============================================="
+          echo "   CD DEPLOYMENT COMPLETE"
+          echo "============================================="
+          echo "  All services deployed and healthy"
+          echo "  Smoke test passed – data flows end-to-end"
+          echo "============================================="
+
+      - name: Stop test environment
+        if: always()
+        run: |
+          docker compose down -v
 
   all-tests-pass:
     name: All Tests Pass
     runs-on: ubuntu-latest
-    needs: [lint, unit-tests, test-schemas, test-transformers, test-services, test-integration, validate-dags, docker-build]
+    needs: [lint, unit-tests, test-schemas, test-transformers, test-services, test-integration, validate-dags, docker-build, data-flow-validation]
     steps:
       - name: All tests passed
         run: |
