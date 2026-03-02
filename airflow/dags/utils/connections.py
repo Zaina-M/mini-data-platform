@@ -18,17 +18,17 @@ class ConnectionConfig:
     """Configuration dataclass for connection settings."""
 
     # MinIO settings
-    MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "minio:9000")
-    MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
-    MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+    MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
+    MINIO_ACCESS_KEY = os.environ["MINIO_ACCESS_KEY"]
+    MINIO_SECRET_KEY = os.environ["MINIO_SECRET_KEY"]
     MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
 
     # PostgreSQL settings
-    POSTGRES_HOST = os.getenv("POSTGRES_HOST", "analytics-db")
-    POSTGRES_PORT = int(os.getenv("POSTGRES_PORT", "5432"))
-    POSTGRES_DB = os.getenv("POSTGRES_DB", "analytics")
-    POSTGRES_USER = os.getenv("POSTGRES_USER", "analytics")
-    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "analytics")
+    POSTGRES_HOST = os.environ["POSTGRES_HOST"]
+    POSTGRES_PORT = int(os.environ["POSTGRES_PORT"])
+    POSTGRES_DB = os.environ["POSTGRES_DB"]
+    POSTGRES_USER = os.environ["POSTGRES_USER"]
+    POSTGRES_PASSWORD = os.environ["POSTGRES_PASSWORD"]
 
 
 def get_minio_client():
