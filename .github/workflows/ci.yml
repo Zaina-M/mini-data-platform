@@ -283,32 +283,32 @@ jobs:
     name: Data Flow Validation
     runs-on: ubuntu-latest
     needs: [docker-build, unit-tests]
+    env:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ENDPOINT: minio:9000
+      AIRFLOW_DB_USER: airflow
+      AIRFLOW_DB_PASSWORD: airflow
+      AIRFLOW_DB_NAME: airflow
+      AIRFLOW_FERNET_KEY: test-fernet-key
+      AIRFLOW_SECRET_KEY: test-secret-key
+      AIRFLOW_ADMIN_USER: admin
+      AIRFLOW_ADMIN_PASSWORD: admin
+      ANALYTICS_DB_HOST: analytics-db
+      ANALYTICS_DB_PORT: '5432'
+      ANALYTICS_DB_NAME: analytics
+      ANALYTICS_DB_USER: analytics
+      ANALYTICS_DB_PASSWORD: analytics
+      METABASE_DB_USER: metabase
+      METABASE_DB_PASSWORD: metabase
+      METABASE_DB_NAME: metabase
+      METABASE_DB_HOST: metabase-db
+      METABASE_DB_PORT: '5432'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Start services
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-          MINIO_ENDPOINT: minio:9000
-          AIRFLOW_DB_USER: airflow
-          AIRFLOW_DB_PASSWORD: airflow
-          AIRFLOW_DB_NAME: airflow
-          AIRFLOW_FERNET_KEY: test-fernet-key
-          AIRFLOW_SECRET_KEY: test-secret-key
-          AIRFLOW_ADMIN_USER: admin
-          AIRFLOW_ADMIN_PASSWORD: admin
-          ANALYTICS_DB_HOST: analytics-db
-          ANALYTICS_DB_PORT: '5432'
-          ANALYTICS_DB_NAME: analytics
-          ANALYTICS_DB_USER: analytics
-          ANALYTICS_DB_PASSWORD: analytics
-          METABASE_DB_USER: metabase
-          METABASE_DB_PASSWORD: metabase
-          METABASE_DB_NAME: metabase
-          METABASE_DB_HOST: metabase-db
-          METABASE_DB_PORT: '5432'
         run: |
           docker compose up -d minio minio-init analytics-db
           echo "Waiting for services to initialize..."
@@ -321,7 +321,7 @@ jobs:
 
       - name: Verify PostgreSQL health
         run: |
-          docker exec analytics-db pg_isready -U analytics
+          docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}
           echo "PostgreSQL is healthy"
 
       - name: Verify bucket creation
@@ -355,34 +355,13 @@ jobs:
 
       - name: Verify PostgreSQL schema
         run: |
-          docker exec analytics-db psql -U analytics -d analytics -c "
+          docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -c "
             SELECT table_name FROM information_schema.tables 
             WHERE table_schema = 'public' AND table_name = 'sales';
           "
 
       - name: Stop services
         if: always()
-        env:
-          MINIO_ROOT_USER: minioadmin
-          MINIO_ROOT_PASSWORD: minioadmin
-          MINIO_ENDPOINT: minio:9000
-          AIRFLOW_DB_USER: airflow
-          AIRFLOW_DB_PASSWORD: airflow
-          AIRFLOW_DB_NAME: airflow
-          AIRFLOW_FERNET_KEY: test-fernet-key
-          AIRFLOW_SECRET_KEY: test-secret-key
-          AIRFLOW_ADMIN_USER: admin
-          AIRFLOW_ADMIN_PASSWORD: admin
-          ANALYTICS_DB_HOST: analytics-db
-          ANALYTICS_DB_PORT: '5432'
-          ANALYTICS_DB_NAME: analytics
-          ANALYTICS_DB_USER: analytics
-          ANALYTICS_DB_PASSWORD: analytics
-          METABASE_DB_USER: metabase
-          METABASE_DB_PASSWORD: metabase
-          METABASE_DB_NAME: metabase
-          METABASE_DB_HOST: metabase-db
-          METABASE_DB_PORT: '5432'
         run: |
           docker compose down -v
 
