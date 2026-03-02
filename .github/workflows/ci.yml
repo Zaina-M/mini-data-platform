@@ -181,6 +181,15 @@ jobs:
       - name: Validate DAG syntax
         env:
           AIRFLOW_HOME: ${{ github.workspace }}/airflow
+          MINIO_ENDPOINT: minio:9000
+          MINIO_ACCESS_KEY: test
+          MINIO_SECRET_KEY: test
+          MINIO_SECURE: 'false'
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: '5432'
+          POSTGRES_DB: test
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
         run: |
           python -c "
           import sys
@@ -216,6 +225,27 @@ jobs:
   docker-build:
     name: Docker Build Test
     runs-on: ubuntu-latest
+    env:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      MINIO_ENDPOINT: minio:9000
+      AIRFLOW_DB_USER: airflow
+      AIRFLOW_DB_PASSWORD: airflow
+      AIRFLOW_DB_NAME: airflow
+      AIRFLOW_FERNET_KEY: test-fernet-key
+      AIRFLOW_SECRET_KEY: test-secret-key
+      AIRFLOW_ADMIN_USER: admin
+      AIRFLOW_ADMIN_PASSWORD: admin
+      ANALYTICS_DB_HOST: analytics-db
+      ANALYTICS_DB_PORT: '5432'
+      ANALYTICS_DB_NAME: analytics
+      ANALYTICS_DB_USER: analytics
+      ANALYTICS_DB_PASSWORD: analytics
+      METABASE_DB_USER: metabase
+      METABASE_DB_PASSWORD: metabase
+      METABASE_DB_NAME: metabase
+      METABASE_DB_HOST: metabase-db
+      METABASE_DB_PORT: '5432'
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -258,6 +288,27 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Start services
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+          MINIO_ENDPOINT: minio:9000
+          AIRFLOW_DB_USER: airflow
+          AIRFLOW_DB_PASSWORD: airflow
+          AIRFLOW_DB_NAME: airflow
+          AIRFLOW_FERNET_KEY: test-fernet-key
+          AIRFLOW_SECRET_KEY: test-secret-key
+          AIRFLOW_ADMIN_USER: admin
+          AIRFLOW_ADMIN_PASSWORD: admin
+          ANALYTICS_DB_HOST: analytics-db
+          ANALYTICS_DB_PORT: '5432'
+          ANALYTICS_DB_NAME: analytics
+          ANALYTICS_DB_USER: analytics
+          ANALYTICS_DB_PASSWORD: analytics
+          METABASE_DB_USER: metabase
+          METABASE_DB_PASSWORD: metabase
+          METABASE_DB_NAME: metabase
+          METABASE_DB_HOST: metabase-db
+          METABASE_DB_PORT: '5432'
         run: |
           docker compose up -d minio minio-init analytics-db
           echo "Waiting for services to initialize..."
@@ -275,11 +326,14 @@ jobs:
 
       - name: Verify bucket creation
         run: |
-          docker exec minio mc alias set local http://localhost:9000 minioadmin minioadmin
+          docker exec minio mc alias set local http://localhost:9000 ${{ env.MINIO_ROOT_USER }} ${{ env.MINIO_ROOT_PASSWORD }}
           docker exec minio mc ls local | grep -E "(raw-sales|processed|archive)" || echo "Buckets created via init container"
           echo "Bucket verification complete"
 
       - name: Run data flow test
+        env:
+          MINIO_ACCESS_KEY: ${{ env.MINIO_ROOT_USER }}
+          MINIO_SECRET_KEY: ${{ env.MINIO_ROOT_PASSWORD }}
         run: |
           # Generate test data
           pip install minio pandas
@@ -288,8 +342,9 @@ jobs:
           
           # Upload to MinIO
           python -c "
+          import os
           from minio import Minio
-          client = Minio('localhost:9000', 'minioadmin', 'minioadmin', secure=False)
+          client = Minio('localhost:9000', os.environ['MINIO_ACCESS_KEY'], os.environ['MINIO_SECRET_KEY'], secure=False)
           client.fput_object('raw-sales', 'test_data.csv', 'test_data.csv')
           print('Test data uploaded to MinIO')
           
@@ -307,6 +362,27 @@ jobs:
 
       - name: Stop services
         if: always()
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+          MINIO_ENDPOINT: minio:9000
+          AIRFLOW_DB_USER: airflow
+          AIRFLOW_DB_PASSWORD: airflow
+          AIRFLOW_DB_NAME: airflow
+          AIRFLOW_FERNET_KEY: test-fernet-key
+          AIRFLOW_SECRET_KEY: test-secret-key
+          AIRFLOW_ADMIN_USER: admin
+          AIRFLOW_ADMIN_PASSWORD: admin
+          ANALYTICS_DB_HOST: analytics-db
+          ANALYTICS_DB_PORT: '5432'
+          ANALYTICS_DB_NAME: analytics
+          ANALYTICS_DB_USER: analytics
+          ANALYTICS_DB_PASSWORD: analytics
+          METABASE_DB_USER: metabase
+          METABASE_DB_PASSWORD: metabase
+          METABASE_DB_NAME: metabase
+          METABASE_DB_HOST: metabase-db
+          METABASE_DB_PORT: '5432'
         run: |
           docker compose down -v
 
