@@ -447,4 +447,15 @@ with DAG(
 
     # Define task dependencies
     # detect → check (short-circuit if empty) → validate → ... → end
-    start >> detect_files >> check_files >> validate >> clean >> compute >> load >> archive >> summary >> end
+    (
+        start
+        >> detect_files
+        >> check_files
+        >> validate
+        >> clean
+        >> compute
+        >> load
+        >> archive
+        >> summary
+        >> end
+    )
