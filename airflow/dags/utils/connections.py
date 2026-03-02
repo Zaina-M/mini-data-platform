@@ -18,17 +18,42 @@ class ConnectionConfig:
     """Configuration dataclass for connection settings."""
 
     # MinIO settings
-    MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
-    MINIO_ACCESS_KEY = os.environ["MINIO_ACCESS_KEY"]
-    MINIO_SECRET_KEY = os.environ["MINIO_SECRET_KEY"]
-    MINIO_SECURE = os.getenv("MINIO_SECURE", "false").lower() == "true"
+    @classmethod
+    def _minio_endpoint(cls):
+        return os.environ["MINIO_ENDPOINT"]
+
+    @classmethod
+    def _minio_access_key(cls):
+        return os.environ["MINIO_ACCESS_KEY"]
+
+    @classmethod
+    def _minio_secret_key(cls):
+        return os.environ["MINIO_SECRET_KEY"]
+
+    @classmethod
+    def _minio_secure(cls):
+        return os.getenv("MINIO_SECURE", "false").lower() == "true"
 
     # PostgreSQL settings
-    POSTGRES_HOST = os.environ["POSTGRES_HOST"]
-    POSTGRES_PORT = int(os.environ["POSTGRES_PORT"])
-    POSTGRES_DB = os.environ["POSTGRES_DB"]
-    POSTGRES_USER = os.environ["POSTGRES_USER"]
-    POSTGRES_PASSWORD = os.environ["POSTGRES_PASSWORD"]
+    @classmethod
+    def _postgres_host(cls):
+        return os.environ["POSTGRES_HOST"]
+
+    @classmethod
+    def _postgres_port(cls):
+        return int(os.environ["POSTGRES_PORT"])
+
+    @classmethod
+    def _postgres_db(cls):
+        return os.environ["POSTGRES_DB"]
+
+    @classmethod
+    def _postgres_user(cls):
+        return os.environ["POSTGRES_USER"]
+
+    @classmethod
+    def _postgres_password(cls):
+        return os.environ["POSTGRES_PASSWORD"]
 
 
 def get_minio_client():
@@ -46,12 +71,12 @@ def get_minio_client():
 
     try:
         client = Minio(
-            ConnectionConfig.MINIO_ENDPOINT,
-            access_key=ConnectionConfig.MINIO_ACCESS_KEY,
-            secret_key=ConnectionConfig.MINIO_SECRET_KEY,
-            secure=ConnectionConfig.MINIO_SECURE,
+            ConnectionConfig._minio_endpoint(),
+            access_key=ConnectionConfig._minio_access_key(),
+            secret_key=ConnectionConfig._minio_secret_key(),
+            secure=ConnectionConfig._minio_secure(),
         )
-        logger.debug(f"MinIO client created for endpoint: {ConnectionConfig.MINIO_ENDPOINT}")
+        logger.debug(f"MinIO client created for endpoint: {ConnectionConfig._minio_endpoint()}")
         return client
     except Exception as e:
         logger.error(f"Failed to create MinIO client: {e}")
@@ -73,15 +98,15 @@ def get_postgres_connection():
 
     try:
         conn = psycopg2.connect(
-            host=ConnectionConfig.POSTGRES_HOST,
-            port=ConnectionConfig.POSTGRES_PORT,
-            database=ConnectionConfig.POSTGRES_DB,
-            user=ConnectionConfig.POSTGRES_USER,
-            password=ConnectionConfig.POSTGRES_PASSWORD,
+            host=ConnectionConfig._postgres_host(),
+            port=ConnectionConfig._postgres_port(),
+            database=ConnectionConfig._postgres_db(),
+            user=ConnectionConfig._postgres_user(),
+            password=ConnectionConfig._postgres_password(),
         )
         logger.debug(
             f"PostgreSQL connection established to "
-            f"{ConnectionConfig.POSTGRES_HOST}:{ConnectionConfig.POSTGRES_PORT}/{ConnectionConfig.POSTGRES_DB}"
+            f"{ConnectionConfig._postgres_host()}:{ConnectionConfig._postgres_port()}/{ConnectionConfig._postgres_db()}"
         )
         return conn
     except Exception as e:
