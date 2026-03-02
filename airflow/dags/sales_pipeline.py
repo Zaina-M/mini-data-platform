@@ -16,7 +16,7 @@ from typing import Any, Dict, List
 
 import pandas as pd
 from airflow.operators.empty import EmptyOperator
-from airflow.operators.python import PythonOperator
+from airflow.operators.python import PythonOperator, ShortCircuitOperator
 from services.minio_service import MinIOService
 from services.postgres_service import PostgresService
 from transformers.data_cleaner import DataCleaner
@@ -47,6 +47,10 @@ def detect_new_files(**context) -> List[str]:
     """
     Detect new CSV files in MinIO raw-sales bucket.
 
+    Takes a snapshot of all CSV files currently present so that only
+    these exact files are processed and archived in this run.
+    Files arriving after this point will be picked up by the next run.
+
     Returns:
         List of CSV file names found
     """
@@ -62,13 +66,25 @@ def detect_new_files(**context) -> List[str]:
 
             log.info(f"Found {len(csv_files)} CSV file(s): {csv_files}")
 
-            # Push to XCom for downstream tasks
+            # Push snapshot to XCom — downstream tasks use ONLY this list
             context["ti"].xcom_push(key="csv_files", value=csv_files)
             return csv_files
 
         except Exception as e:
             log.error(f"Error detecting files: {e}")
             raise
+
+
+def check_files_exist(**context) -> bool:
+    """
+    ShortCircuit: skip downstream tasks when no files are found.
+
+    Returns:
+        True if files exist (continue pipeline), False to short-circuit.
+    """
+    ti = context["ti"]
+    csv_files = ti.xcom_pull(task_ids="detect_new_files", key="csv_files")
+    return bool(csv_files)
 
 
 def validate_schema(**context) -> List[str]:
@@ -376,9 +392,10 @@ with DAG(
     "sales_data_pipeline",
     default_args=default_args,
     description="Process sales CSV files from MinIO to PostgreSQL with Pandera validation",
-    schedule_interval=timedelta(minutes=15),
+    schedule_interval=timedelta(minutes=5),
     start_date=datetime(2024, 1, 1),
     catchup=False,
+    max_active_runs=1,  # Prevent overlapping runs so files aren't double-processed
     tags=["sales", "etl", "production", "pandera"],
 ) as dag:
 
@@ -388,6 +405,12 @@ with DAG(
     detect_files = PythonOperator(
         task_id="detect_new_files",
         python_callable=detect_new_files,
+    )
+
+    # Short-circuit: skip the rest when no files are found
+    check_files = ShortCircuitOperator(
+        task_id="check_files_exist",
+        python_callable=check_files_exist,
     )
 
     validate = PythonOperator(
@@ -423,4 +446,5 @@ with DAG(
     end = EmptyOperator(task_id="end")
 
     # Define task dependencies
-    start >> detect_files >> validate >> clean >> compute >> load >> archive >> summary >> end
+    # detect → check (short-circuit if empty) → validate → ... → end
+    start >> detect_files >> check_files >> validate >> clean >> compute >> load >> archive >> summary >> end
