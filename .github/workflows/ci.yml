@@ -357,7 +357,7 @@ jobs:
           done
 
           echo "Waiting for application services..."
-          wait_for "Airflow" "curl -sf http://localhost:8080/health" 60
+          wait_for "Airflow Scheduler" "docker exec airflow-scheduler airflow dags list" 60
           wait_for "Metabase" "curl -sf http://localhost:3000/api/health" 60
 
           echo "All services healthy"
@@ -403,47 +403,30 @@ jobs:
           print('INGESTION CHECK PASSED: test data uploaded to MinIO')
           "
 
-      # ── 9. Trigger Airflow DAG (Processing) ────────────────────
+      # ── 9. Trigger Airflow DAG via CLI (Processing) ─────────────
       - name: Unpause and trigger Airflow DAG
         run: |
-          # Unpause the DAG
-          curl -sf -X PATCH \
-            "http://localhost:8080/api/v1/dags/sales_data_pipeline" \
-            -H "Content-Type: application/json" \
-            -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" \
-            -d '{"is_paused": false}' | python3 -m json.tool
+          # Unpause the DAG via CLI on the scheduler container
+          docker exec airflow-scheduler airflow dags unpause sales_data_pipeline
           echo "DAG unpaused"
 
-          # Trigger the DAG
-          RUN_RESPONSE=$(curl -sf -X POST \
-            "http://localhost:8080/api/v1/dags/sales_data_pipeline/dagRuns" \
-            -H "Content-Type: application/json" \
-            -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" \
-            -d '{"conf": {}}')
-          echo "$RUN_RESPONSE" | python3 -m json.tool
-          DAG_RUN_ID=$(echo "$RUN_RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin)['dag_run_id'])")
-          echo "DAG_RUN_ID=$DAG_RUN_ID" >> $GITHUB_ENV
-          echo "Triggered DAG run: $DAG_RUN_ID"
+          # Trigger the DAG via CLI
+          docker exec airflow-scheduler airflow dags trigger sales_data_pipeline
+          echo "DAG triggered"
 
       # ── 10. Wait for DAG run to complete ────────────────────────
       - name: Wait for DAG run to complete
         run: |
-          echo "Polling DAG run status..."
+          echo "Polling DAG run status via CLI..."
           for i in $(seq 1 60); do
-            RESPONSE=$(curl -sf \
-              "http://localhost:8080/api/v1/dags/sales_data_pipeline/dagRuns/${{ env.DAG_RUN_ID }}" \
-              -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" 2>/dev/null || echo '{}')
-            STATE=$(echo "$RESPONSE" | python3 -c "import sys,json; print(json.load(sys.stdin).get('state','unknown'))" 2>/dev/null || echo "unknown")
+            STATE=$(docker exec airflow-scheduler airflow dags list-runs -d sales_data_pipeline -o plain --no-backfill 2>/dev/null | head -5 | grep -oE '(success|failed|running|queued)' | head -1 || echo "unknown")
             echo "  attempt $i/60 – state: $STATE"
 
             if [ "$STATE" = "success" ]; then
               echo "PROCESSING CHECK PASSED: DAG completed successfully"
               exit 0
             elif [ "$STATE" = "failed" ]; then
-              echo "DAG run failed! Dumping task logs..."
-              curl -sf \
-                "http://localhost:8080/api/v1/dags/sales_data_pipeline/dagRuns/${{ env.DAG_RUN_ID }}/taskInstances" \
-                -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" | python3 -m json.tool
+              echo "DAG run failed! Dumping scheduler logs..."
               docker compose logs airflow-scheduler --tail 80
               exit 1
             fi
@@ -708,7 +691,7 @@ jobs:
             sleep 5
           done
 
-          wait_for "Airflow" "curl -sf http://localhost:8080/health" 60
+          wait_for "Airflow Scheduler" "docker exec airflow-scheduler airflow dags list" 60
           wait_for "Metabase" "curl -sf http://localhost:3000/api/health" 60
           echo "All services healthy in test environment"
 
@@ -729,29 +712,21 @@ jobs:
           "
           cd ..
 
-          # Trigger pipeline
-          curl -sf -X PATCH "http://localhost:8080/api/v1/dags/sales_data_pipeline" \
-            -H "Content-Type: application/json" \
-            -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" \
-            -d '{"is_paused": false}' > /dev/null
+          # Trigger pipeline via CLI
+          docker exec airflow-scheduler airflow dags unpause sales_data_pipeline
+          docker exec airflow-scheduler airflow dags trigger sales_data_pipeline
+          echo "Smoke test DAG triggered"
 
-          RUN_ID=$(curl -sf -X POST "http://localhost:8080/api/v1/dags/sales_data_pipeline/dagRuns" \
-            -H "Content-Type: application/json" \
-            -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" \
-            -d '{"conf": {}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['dag_run_id'])")
-          echo "Triggered smoke test DAG run: $RUN_ID"
-
-          # Poll for completion
+          # Poll for completion via CLI
           for i in $(seq 1 40); do
-            STATE=$(curl -sf "http://localhost:8080/api/v1/dags/sales_data_pipeline/dagRuns/$RUN_ID" \
-              -u "${{ env.AIRFLOW_ADMIN_USER }}:${{ env.AIRFLOW_ADMIN_PASSWORD }}" | python3 -c "import sys,json; print(json.load(sys.stdin).get('state','unknown'))" 2>/dev/null || echo "unknown")
+            STATE=$(docker exec airflow-scheduler airflow dags list-runs -d sales_data_pipeline -o plain --no-backfill 2>/dev/null | head -5 | grep -oE '(success|failed|running|queued)' | head -1 || echo "unknown")
             if [ "$STATE" = "success" ]; then
               echo "Smoke test DAG completed successfully"
               break
             elif [ "$STATE" = "failed" ]; then
               echo "Smoke test DAG failed" && exit 1
             fi
-            sleep 15
+            sleep 10
           done
 
           # Verify data in DB
