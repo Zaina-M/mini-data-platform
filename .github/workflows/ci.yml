@@ -282,6 +282,7 @@ jobs:
   data-flow-validation:
     name: Data Flow Validation
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [docker-build, unit-tests]
     env:
       MINIO_ROOT_USER: minioadmin
@@ -308,78 +309,63 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ── 1. Start ALL platform services ──────────────────────────
-      - name: Start all services
-        run: |
-          docker compose up -d
-          echo "Waiting for services to initialize..."
+      - name: Install Python clients
+        run: pip install minio pandas > /dev/null
 
-      # ── 2. Wait for MinIO to be healthy ─────────────────────────
-      - name: Wait for MinIO
+      # ── 1. Build and start ALL platform services ────────────────
+      - name: Build and start all services
         run: |
-          echo "Waiting for MinIO..."
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:9000/minio/health/live > /dev/null 2>&1; then
-              echo "MinIO is healthy"
-              exit 0
-            fi
-            echo "  attempt $i/30 – not ready yet"
-            sleep 10
-          done
-          echo "MinIO failed to start" && exit 1
+          docker compose up -d --build
+          echo "Services starting..."
 
-      # ── 3. Wait for PostgreSQL (analytics-db) ──────────────────
-      - name: Wait for PostgreSQL
+      # ── 2. Wait for all services to be healthy ──────────────────
+      - name: Wait for all services
         run: |
-          echo "Waiting for analytics-db..."
-          for i in $(seq 1 30); do
-            if docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }} > /dev/null 2>&1; then
-              echo "PostgreSQL is healthy"
-              exit 0
-            fi
-            echo "  attempt $i/30 – not ready yet"
-            sleep 10
-          done
-          echo "PostgreSQL failed to start" && exit 1
+          wait_for() {
+            local name="$1" cmd="$2" max="$3"
+            for i in $(seq 1 "$max"); do
+              if eval "$cmd" > /dev/null 2>&1; then
+                echo "  ✓ $name is healthy"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "  ✗ $name FAILED after $max attempts"
+            return 1
+          }
 
-      # ── 4. Wait for Airflow webserver ──────────────────────────
-      - name: Wait for Airflow webserver
-        run: |
-          echo "Waiting for Airflow webserver..."
+          echo "Waiting for infrastructure..."
+          wait_for "MinIO"      "curl -sf http://localhost:9000/minio/health/live" 36
+          wait_for "PostgreSQL" "docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}" 36
+
+          echo "Waiting for airflow-init to complete..."
           for i in $(seq 1 60); do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health || true)
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "Airflow webserver is healthy"
-              exit 0
+            STATUS=$(docker inspect --format='{{.State.Status}}' airflow-init 2>/dev/null || echo "unknown")
+            if [ "$STATUS" = "exited" ]; then
+              EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' airflow-init)
+              if [ "$EXIT_CODE" = "0" ]; then
+                echo "  ✓ airflow-init completed successfully"
+                break
+              else
+                echo "  ✗ airflow-init exited with code $EXIT_CODE"
+                docker logs airflow-init --tail 30
+                exit 1
+              fi
             fi
-            echo "  attempt $i/60 – HTTP $HTTP_CODE"
-            sleep 15
+            echo "  airflow-init: $STATUS (attempt $i/60)"
+            sleep 5
           done
-          echo "Airflow webserver failed to start"
-          docker compose logs airflow-webserver --tail 50
-          exit 1
 
-      # ── 5. Wait for Metabase ───────────────────────────────────
-      - name: Wait for Metabase
-        run: |
-          echo "Waiting for Metabase..."
-          for i in $(seq 1 60); do
-            STATUS=$(curl -sf http://localhost:3000/api/health 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || true)
-            if [ "$STATUS" = "ok" ]; then
-              echo "Metabase is healthy"
-              exit 0
-            fi
-            echo "  attempt $i/60 – status: ${STATUS:-not-ready}"
-            sleep 15
-          done
-          echo "Metabase failed to start"
-          docker compose logs metabase --tail 50
-          exit 1
+          echo "Waiting for application services..."
+          wait_for "Airflow" "curl -sf http://localhost:8080/health" 60
+          wait_for "Metabase" "curl -sf http://localhost:3000/api/health" 60
+
+          echo "All services healthy"
+          docker compose ps
 
       # ── 6. Verify MinIO buckets were created ───────────────────
       - name: Verify MinIO buckets
         run: |
-          pip install minio > /dev/null
           python3 -c "
           from minio import Minio
           client = Minio('localhost:9000', 'minioadmin', 'minioadmin', secure=False)
@@ -405,7 +391,6 @@ jobs:
       # ── 8. Upload test data to MinIO (Ingestion) ───────────────
       - name: Generate and upload test data to MinIO
         run: |
-          pip install pandas > /dev/null
           cd data-generator
           python generate_sales.py --records 50 --error-rate 0.05 --output test_flow.csv
           python3 -c "
@@ -462,7 +447,7 @@ jobs:
               docker compose logs airflow-scheduler --tail 80
               exit 1
             fi
-            sleep 15
+            sleep 10
           done
           echo "DAG run timed out"
           docker compose logs airflow-scheduler --tail 80
@@ -664,6 +649,7 @@ jobs:
   cd-deploy-test:
     name: CD - Deploy to Test Environment
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [lint, unit-tests, validate-dags, docker-build, data-flow-validation]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     env:
@@ -694,67 +680,43 @@ jobs:
       - name: Deploy containers to test environment
         run: |
           echo "Deploying to test environment..."
-          docker compose up -d
+          docker compose up -d --build
           echo "All containers deployed"
 
       - name: Wait for services to be healthy
         run: |
-          echo "Running health checks on deployed services..."
-          SERVICES_OK=true
+          wait_for() {
+            local name="$1" cmd="$2" max="$3"
+            for i in $(seq 1 "$max"); do
+              if eval "$cmd" > /dev/null 2>&1; then
+                echo "  ✓ $name: healthy"
+                return 0
+              fi
+              sleep 5
+            done
+            echo "  ✗ $name: FAILED" && return 1
+          }
 
-          # Check MinIO
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:9000/minio/health/live > /dev/null 2>&1; then
-              echo "  MinIO: healthy"
-              break
-            fi
-            if [ "$i" -eq 30 ]; then echo "  MinIO: FAILED" && SERVICES_OK=false; fi
-            sleep 10
-          done
+          echo "Running health checks..."
+          wait_for "MinIO" "curl -sf http://localhost:9000/minio/health/live" 36
+          wait_for "PostgreSQL" "docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}" 36
 
-          # Check PostgreSQL
-          for i in $(seq 1 30); do
-            if docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }} > /dev/null 2>&1; then
-              echo "  PostgreSQL: healthy"
-              break
-            fi
-            if [ "$i" -eq 30 ]; then echo "  PostgreSQL: FAILED" && SERVICES_OK=false; fi
-            sleep 10
-          done
-
-          # Check Airflow
+          echo "Waiting for airflow-init..."
           for i in $(seq 1 60); do
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health || true)
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "  Airflow: healthy"
-              break
-            fi
-            if [ "$i" -eq 60 ]; then echo "  Airflow: FAILED" && SERVICES_OK=false; fi
-            sleep 15
+            STATUS=$(docker inspect --format='{{.State.Status}}' airflow-init 2>/dev/null || echo "unknown")
+            if [ "$STATUS" = "exited" ]; then break; fi
+            sleep 5
           done
 
-          # Check Metabase
-          for i in $(seq 1 60); do
-            STATUS=$(curl -sf http://localhost:3000/api/health 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || true)
-            if [ "$STATUS" = "ok" ]; then
-              echo "  Metabase: healthy"
-              break
-            fi
-            if [ "$i" -eq 60 ]; then echo "  Metabase: FAILED" && SERVICES_OK=false; fi
-            sleep 15
-          done
-
-          if [ "$SERVICES_OK" = "false" ]; then
-            echo "One or more services failed health checks"
-            docker compose ps -a
-            exit 1
-          fi
+          wait_for "Airflow" "curl -sf http://localhost:8080/health" 60
+          wait_for "Metabase" "curl -sf http://localhost:3000/api/health" 60
           echo "All services healthy in test environment"
+
+      - name: Install Python clients
+        run: pip install minio pandas > /dev/null
 
       - name: Smoke test – verify data flow
         run: |
-          pip install minio pandas > /dev/null
-
           # Generate and upload a small test file
           cd data-generator
           python generate_sales.py --records 20 --error-rate 0.0 --output smoke_test.csv
