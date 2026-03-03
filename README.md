@@ -1,7 +1,4 @@
 # Mini Data Platform
-
-A production-quality, containerized data platform for processing sales data. Built with modern data engineering practices using Docker Compose.
-
 ## Project Overview
 
 This project demonstrates a complete data platform architecture using industry-standard tools. It processes raw sales CSV files through an automated pipeline and delivers business intelligence dashboards.
@@ -78,7 +75,7 @@ flowchart LR
 ## Data Flow
 
 1. **Ingest**: Sales CSV files are uploaded to MinIO `raw-sales` bucket
-2. **Detect**: Airflow DAG runs every 15 minutes, detecting new files
+2. **Detect**: Airflow DAG runs every 5 minutes, detecting new files
 3. **Validate**: Schema and data types are verified
 4. **Clean**: Invalid records removed, data standardized
 5. **Transform**: Calculate derived fields (total_amount)
@@ -86,12 +83,7 @@ flowchart LR
 7. **Archive**: Move processed files to archive bucket
 8. **Visualize**: Metabase queries PostgreSQL for dashboards
 
-## Prerequisites
 
-- Docker Desktop (4.0+)
-- Docker Compose (v2.0+)
-- Python 3.9+ (for data generator)
-- 8GB RAM minimum
 
 ## Quick Start
 
@@ -133,12 +125,22 @@ Expected output shows all containers as "healthy" or "running".
 ```bash
 cd data-generator
 pip install -r requirements.txt
-python generate_sales.py --records 500 --upload
+
+# Generate a single batch of test data
+python generate_sales.py --records 50 --error-rate 0.05
+
+# Stream data continuously (generates a batch every N seconds)
+python generate_sales.py --stream --records 50 --interval 30
+
+# Upload directly to MinIO (requires MinIO env vars)
+python generate_sales.py --records 50 --upload
 ```
+
+Press `Ctrl+C` to gracefully stop streaming mode.
 
 ### 6. Trigger the Pipeline
 
-Option A: Wait for scheduled run (every 15 minutes)
+Option A: Wait for scheduled run (every 5 minutes)
 
 Option B: Trigger manually in Airflow UI:
 1. Go to http://localhost:8080
@@ -235,8 +237,17 @@ class CleanedSalesSchema(pa.DataFrameModel):
 
 Service classes encapsulate external dependencies:
 
-- **MinIOService** - File detection, download, upload, archiving
-- **PostgresService** - Data loading, queries, health checks
+- **MinIOService** - File detection, download, upload, archiving (uses `CopySource` for archive operations)
+- **PostgresService** - Data loading with per-row retry logic, queries, health checks
+
+### Resilience & Retry Logic
+
+The pipeline includes multiple layers of fault tolerance:
+
+- **DAG-level retries**: Each task retries up to 3 times with a 5-minute delay between attempts
+- **Per-row insert retries**: Individual row inserts retry up to 3 times with exponential backoff (1s, 2s, 4s), logging failures without stopping the batch
+- **Health checks**: PostgreSQL connectivity is verified before loading data
+- **Short-circuit**: Pipeline gracefully skips processing when no new files are detected
 
 ### Transformer Layer
 
@@ -273,7 +284,7 @@ pytest tests/test_integration.py -v
 
 ### Automatic Runs
 
-The pipeline runs automatically every 15 minutes when data is present in the `raw-sales` bucket.
+The pipeline runs automatically every 5 minutes when data is present in the `raw-sales` bucket.
 
 ### Manual Trigger
 
@@ -305,15 +316,19 @@ docker exec airflow-webserver airflow dags trigger sales_data_pipeline
    - User: analytics
    - Password: analytics
 
-### Create Dashboards
+### Dashboards
+Provides insights understand business health. Sudden changes trigger investigations into marketing, product, or operational issues.
 
-See [Dashboard Requirements](docs/dashboard_requirements.md) for detailed specifications.
+![alt text](image.png)
+**Average Order Value**: Customer spending trends by Country.
+![alt text](image-1.png)
 
-Recommended dashboards:
-- **Sales Over Time**: Line chart of daily revenue
-- **Sales by Country**: Geographic distribution
-- **Top Products**: Best-selling items
-- **Average Order Value**: Customer spending trends
+![alt text](image-2.png)
+Top 10 best-selling products.
+![alt text](image-3.png)
+
+
+
 
 ## CI/CD Pipeline
 
@@ -323,11 +338,17 @@ The project includes a GitHub Actions workflow that runs on every push:
 
 | Check | Purpose |
 |-------|---------|
-| Lint | Code style (flake8, black) |
+| Code Quality | Code style (flake8, black, isort) |
+| Unit Tests | Core logic tests (121 tests) |
+| Schema Tests | Pandera validation tests |
+| Transformer Tests | Cleaner/enricher tests |
+| Service Tests | MinIO and PostgreSQL service tests |
+| Integration Tests | End-to-end pipeline tests |
 | DAG Validation | Airflow syntax check |
-| SQL Validation | Schema syntax |
+| SQL Validation | Schema syntax (sqlfluff) |
 | Docker Build | Container build test |
-| Security Scan | Vulnerability detection |
+| Security Scan | Vulnerability detection (Trivy) |
+| Data Flow Validation | Full platform end-to-end test |
 
 ### Running CI Locally
 
@@ -428,40 +449,20 @@ docker-compose down -v
 ## Screenshots
 
 ### Airflow DAG View
-*[Screenshot placeholder: Airflow DAG graph showing task dependencies]*
+![alt text](image-5.png)
 
 ### MinIO Console
-*[Screenshot placeholder: MinIO browser showing raw-sales bucket]*
+![alt text](image-4.png)
 
-### Metabase Dashboard
-*[Screenshot placeholder: Sales dashboard with charts]*
 
 ### Pipeline Success
-*[Screenshot placeholder: Airflow showing successful DAG run]*
+![alt text](image-6.png)
 
 ## Documentation
 
-- [Black Box Learning Guide](docs/black_box_learning.md) - Structured learning path
 - [Project Walkthrough](docs/project_walkthrough.md) - Why and how decisions were made
-- [Dashboard Requirements](docs/dashboard_requirements.md) - BI specifications
 - [CI/CD Overview](docs/cicd_overview.md) - Pipeline documentation
 
-## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make changes and test locally
-4. Run CI checks: `./scripts/run-ci.sh`
-5. Submit a pull request
 
-## License
 
-MIT License - See LICENSE file for details.
-
-## Acknowledgments
-
-Built with:
-- [Apache Airflow](https://airflow.apache.org/)
-- [MinIO](https://min.io/)
-- [PostgreSQL](https://www.postgresql.org/)
-- [Metabase](https://www.metabase.com/)
