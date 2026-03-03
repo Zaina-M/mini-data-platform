@@ -13,6 +13,7 @@ from io import BytesIO
 from typing import List, Optional, Tuple
 
 import pandas as pd
+from minio.commonconfig import CopySource
 from utils.connections import get_minio_client
 from utils.logging_config import get_logger
 
@@ -221,7 +222,9 @@ class MinIOService:
 
             # Copy to archive
             self.client.copy_object(
-                self.ARCHIVE_BUCKET, archive_name, f"/{source_bucket}/{file_name}"
+                self.ARCHIVE_BUCKET,
+                archive_name,
+                CopySource(source_bucket, file_name),
             )
 
             logger.info(f"Copied {file_name} to archive/{archive_name}")
