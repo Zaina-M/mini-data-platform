@@ -319,13 +319,13 @@ docker exec airflow-webserver airflow dags trigger sales_data_pipeline
 ### Dashboards
 Provides insights understand business health. Sudden changes trigger investigations into marketing, product, or operational issues.
 
-![alt text](image.png)
+![alt text](screenshots/image.png)
 **Average Order Value**: Customer spending trends by Country.
-![alt text](image-1.png)
+![alt text](screenshots/image-1.png)
 
-![alt text](image-2.png)
+![alt text](screenshots/image-2.png)
 Top 10 best-selling products.
-![alt text](image-3.png)
+![alt text](screenshots/image-3.png)
 
 
 
@@ -449,14 +449,14 @@ docker-compose down -v
 ## Screenshots
 
 ### Airflow DAG View
-![alt text](image-5.png)
+![alt text](screenshots/image-5.png)
 
 ### MinIO Console
-![alt text](image-4.png)
+![alt text](screenshots/image-4.png)
 
 
 ### Pipeline Success
-![alt text](image-6.png)
+![alt text](screenshots/image-6.png)
 
 ## Documentation
 

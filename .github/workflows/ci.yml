@@ -606,18 +606,37 @@ jobs:
           echo "Waiting for Metabase to sync database..."
           sleep 30
 
+          # Find the analytics database ID
+          echo "Finding analytics database..."
+          DB_ID=$(curl -sf http://localhost:3000/api/database \
+            -H "X-Metabase-Session: $SESSION_TOKEN" | python3 -c "
+          import json, sys
+          dbs = json.load(sys.stdin).get('data', [])
+          for db in dbs:
+              if db.get('engine') == 'postgres' and 'analytics' in db.get('name', '').lower():
+                  print(db['id'])
+                  sys.exit(0)
+          # Fallback: use the first non-sample postgres database
+          for db in dbs:
+              if db.get('engine') == 'postgres':
+                  print(db['id'])
+                  sys.exit(0)
+          print('1')
+          ")
+          echo "Using database ID: $DB_ID"
+
           # Run a native query through Metabase to verify end-to-end
           echo "Running query through Metabase API..."
           QUERY_RESULT=$(curl -sf -X POST http://localhost:3000/api/dataset \
             -H "Content-Type: application/json" \
             -H "X-Metabase-Session: $SESSION_TOKEN" \
-            -d '{
-              "database": 1,
-              "type": "native",
-              "native": {
-                "query": "SELECT COUNT(*) as total_rows, SUM(total_amount) as total_revenue, COUNT(DISTINCT country) as countries FROM sales"
+            -d "{
+              \"database\": $DB_ID,
+              \"type\": \"native\",
+              \"native\": {
+                \"query\": \"SELECT COUNT(*) as total_rows, SUM(total_amount) as total_revenue, COUNT(DISTINCT country) as countries FROM sales\"
               }
-            }')
+            }")
 
           # Parse and verify results
           echo "$QUERY_RESULT" | python3 -c "
