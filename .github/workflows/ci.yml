@@ -335,8 +335,9 @@ jobs:
           }
 
           echo "Waiting for infrastructure..."
-          wait_for "MinIO"      "curl -sf http://localhost:9000/minio/health/live" 36
-          wait_for "PostgreSQL" "docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}" 36
+          wait_for "MinIO"        "curl -sf http://localhost:9000/minio/health/live" 36
+          wait_for "Airflow DB"   "docker exec airflow-db pg_isready -U ${{ env.AIRFLOW_DB_USER }}" 36
+          wait_for "Analytics DB" "docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}" 36
 
           echo "Waiting for airflow-init to complete..."
           for i in $(seq 1 60); do
@@ -370,17 +371,43 @@ jobs:
             sleep 5
           done
 
-          # Now wait for Airflow CLI to be responsive
-          wait_for "Airflow Scheduler" "docker exec airflow-scheduler airflow dags list" 60
-          if [ $? -ne 0 ]; then
-            echo "=== Scheduler Diagnostics ==="
-            docker compose ps
-            echo "--- Scheduler Logs ---"
+          # Check scheduler container is still running (not crashed)
+          FINAL_STATUS=$(docker inspect --format='{{.State.Status}}' airflow-scheduler 2>/dev/null || echo "unknown")
+          if [ "$FINAL_STATUS" != "running" ]; then
+            echo "  ✗ Scheduler container not running (status: $FINAL_STATUS)"
             docker logs airflow-scheduler --tail 50
-            echo "--- DAG Import Errors ---"
+            exit 1
+          fi
+
+          # Wait for airflow CLI to be responsive (check db connection)
+          echo "  Waiting for Airflow CLI..."
+          for i in $(seq 1 60); do
+            if docker exec airflow-scheduler airflow db check > /dev/null 2>&1; then
+              echo "  ✓ Airflow database connection OK (attempt $i)"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "  ✗ Airflow database check failed after 60 attempts"
+              echo "--- Container Status ---"
+              docker compose ps
+              echo "--- Scheduler Logs ---"
+              docker logs airflow-scheduler --tail 100
+              echo "--- DB Check Output ---"
+              docker exec airflow-scheduler airflow db check 2>&1 || true
+              exit 1
+            fi
+            echo "    db check attempt $i/60..."
+            sleep 5
+          done
+
+          # Now verify DAGs can be listed
+          echo "  Checking DAG parsing..."
+          if ! docker exec airflow-scheduler airflow dags list 2>&1; then
+            echo "  ✗ DAG listing failed"
             docker exec airflow-scheduler airflow dags list-import-errors 2>&1 || true
             exit 1
           fi
+          echo "  ✓ Airflow Scheduler is healthy"
 
           wait_for "Metabase" "curl -sf http://localhost:3000/api/health" 60
 
