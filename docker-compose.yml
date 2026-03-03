@@ -30,8 +30,6 @@ x-airflow-common: &airflow-common
       condition: service_healthy
     minio:
       condition: service_healthy
-    analytics-db:
-      condition: service_healthy
   networks:
     - data-platform
 
