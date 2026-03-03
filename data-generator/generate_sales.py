@@ -9,6 +9,9 @@ import argparse
 import csv
 import os
 import random
+import signal
+import sys
+import time
 from datetime import datetime, timedelta
 from io import StringIO
 
@@ -186,9 +189,9 @@ def upload_to_minio(file_path, bucket_name="raw-sales"):
 
     client = Minio(
         os.environ.get("MINIO_ENDPOINT", "localhost:9000"),
-        access_key=os.environ["MINIO_ACCESS_KEY"],
-        secret_key=os.environ["MINIO_SECRET_KEY"],
-        secure=False,
+        access_key=os.environ.get("MINIO_ACCESS_KEY", os.environ.get("MINIO_ROOT_USER", "minioadmin")),
+        secret_key=os.environ.get("MINIO_SECRET_KEY", os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")),
+        secure=os.environ.get("MINIO_SECURE", "false").lower() == "true",
     )
 
     # Ensure bucket exists
@@ -211,9 +214,28 @@ def main():
     )
     parser.add_argument("--output", type=str, default=None, help="Output file path")
     parser.add_argument("--upload", action="store_true", help="Upload to MinIO after generation")
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Stream mode: continuously generate and upload data (Ctrl+C to stop)",
+    )
+    parser.add_argument(
+        "--interval",
+        type=int,
+        default=30,
+        help="Seconds between batches in stream mode (default: 30)",
+    )
 
     args = parser.parse_args()
 
+    if args.stream:
+        stream_mode(args)
+    else:
+        single_run(args)
+
+
+def single_run(args):
+    """Generate a single batch of data."""
     generator = SalesDataGenerator(num_records=args.records, error_rate=args.error_rate)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -239,6 +261,95 @@ def main():
         except Exception as e:
             print(f"Upload failed: {e}")
             print("Make sure MinIO is running and accessible")
+
+
+def stream_mode(args):
+    """
+    Continuously generate and upload data until Ctrl+C.
+
+    Simulates a real-time data stream:
+    - Generates a batch every --interval seconds
+    - Uploads directly to MinIO
+    - Prints running stats
+    - Gracefully stops on Ctrl+C
+    """
+    stop_event = False
+
+    def handle_signal(signum, frame):
+        nonlocal stop_event
+        stop_event = True
+        print("\n\nStopping stream (finishing current batch)...")
+
+    signal.signal(signal.SIGINT, handle_signal)
+    signal.signal(signal.SIGTERM, handle_signal)
+
+    print("=" * 55)
+    print("  STREAMING MODE — generating data continuously")
+    print(f"  Records per batch : {args.records}")
+    print(f"  Error rate        : {args.error_rate}")
+    print(f"  Interval          : {args.interval}s")
+    print("  Press Ctrl+C to stop gracefully")
+    print("=" * 55)
+    print()
+
+    batch_num = 0
+    total_records = 0
+    total_uploaded = 0
+    start_time = time.time()
+    # Use a high starting counter to avoid order_id collisions across batches
+    order_base = int(time.time()) % 900000 + 100000
+
+    while not stop_event:
+        batch_num += 1
+        generator = SalesDataGenerator(num_records=args.records, error_rate=args.error_rate)
+        generator.order_counter = order_base + (batch_num * args.records)
+
+        records = generator.generate_dataset()
+        total_records += len(records)
+
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = os.path.join(
+            os.path.dirname(__file__), "..", "data", "output", f"sales_data_{timestamp}.csv"
+        )
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
+        generator.save_to_file(filename, records)
+
+        # Upload to MinIO
+        try:
+            upload_to_minio(filename)
+            total_uploaded += len(records)
+            elapsed = time.time() - start_time
+            print(
+                f"  [Batch {batch_num}] {len(records)} records | "
+                f"Total: {total_records} generated, {total_uploaded} uploaded | "
+                f"Elapsed: {elapsed:.0f}s"
+            )
+        except Exception as e:
+            print(f"  [Batch {batch_num}] Upload failed: {e}")
+
+        # Clean up local file after upload
+        try:
+            os.remove(filename)
+        except OSError:
+            pass
+
+        # Wait for next interval (check stop_event every second)
+        if not stop_event:
+            for _ in range(args.interval):
+                if stop_event:
+                    break
+                time.sleep(1)
+
+    # Final summary
+    elapsed = time.time() - start_time
+    print()
+    print("=" * 55)
+    print("  STREAM STOPPED")
+    print(f"  Batches sent  : {batch_num}")
+    print(f"  Total records : {total_records}")
+    print(f"  Uploaded      : {total_uploaded}")
+    print(f"  Duration      : {elapsed:.0f}s")
+    print("=" * 55)
 
 
 if __name__ == "__main__":
