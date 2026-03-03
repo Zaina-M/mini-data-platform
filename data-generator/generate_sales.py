@@ -189,8 +189,12 @@ def upload_to_minio(file_path, bucket_name="raw-sales"):
 
     client = Minio(
         os.environ.get("MINIO_ENDPOINT", "localhost:9000"),
-        access_key=os.environ.get("MINIO_ACCESS_KEY", os.environ.get("MINIO_ROOT_USER", "minioadmin")),
-        secret_key=os.environ.get("MINIO_SECRET_KEY", os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")),
+        access_key=os.environ.get(
+            "MINIO_ACCESS_KEY", os.environ.get("MINIO_ROOT_USER", "minioadmin")
+        ),
+        secret_key=os.environ.get(
+            "MINIO_SECRET_KEY", os.environ.get("MINIO_ROOT_PASSWORD", "minioadmin")
+        ),
         secure=os.environ.get("MINIO_SECURE", "false").lower() == "true",
     )
 
