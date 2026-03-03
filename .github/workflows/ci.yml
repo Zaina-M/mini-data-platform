@@ -357,7 +357,31 @@ jobs:
           done
 
           echo "Waiting for application services..."
+
+          # Wait for scheduler container to be running first
+          echo "  Waiting for scheduler container..."
+          for i in $(seq 1 30); do
+            SCHED_STATUS=$(docker inspect --format='{{.State.Status}}' airflow-scheduler 2>/dev/null || echo "not-found")
+            if [ "$SCHED_STATUS" = "running" ]; then
+              echo "  ✓ Scheduler container is running"
+              break
+            fi
+            echo "    scheduler status: $SCHED_STATUS (attempt $i/30)"
+            sleep 5
+          done
+
+          # Now wait for Airflow CLI to be responsive
           wait_for "Airflow Scheduler" "docker exec airflow-scheduler airflow dags list" 60
+          if [ $? -ne 0 ]; then
+            echo "=== Scheduler Diagnostics ==="
+            docker compose ps
+            echo "--- Scheduler Logs ---"
+            docker logs airflow-scheduler --tail 50
+            echo "--- DAG Import Errors ---"
+            docker exec airflow-scheduler airflow dags list-import-errors 2>&1 || true
+            exit 1
+          fi
+
           wait_for "Metabase" "curl -sf http://localhost:3000/api/health" 60
 
           echo "All services healthy"
