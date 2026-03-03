@@ -10,7 +10,6 @@ import csv
 import os
 import random
 import signal
-import sys
 import time
 from datetime import datetime, timedelta
 from io import StringIO
