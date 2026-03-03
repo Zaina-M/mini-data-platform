@@ -457,6 +457,7 @@ docker-compose down -v
 
 ### Pipeline Success
 ![alt text](screenshots/image-6.png)
+![alt text](screenshots/image-7.png)
 
 ## Documentation
 
