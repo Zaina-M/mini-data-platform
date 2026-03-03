@@ -602,6 +602,38 @@ jobs:
             -d '{"username": "ci@test.com", "password": "CITest123!"}' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
           echo "Session token acquired"
 
+          # Ensure analytics database is registered in Metabase
+          echo "Checking for analytics database..."
+          HAS_POSTGRES=$(curl -sf http://localhost:3000/api/database \
+            -H "X-Metabase-Session: $SESSION_TOKEN" | python3 -c "
+          import json, sys
+          raw = json.load(sys.stdin)
+          dbs = raw if isinstance(raw, list) else raw.get('data', raw.get('databases', []))
+          print('yes' if any(d.get('engine') == 'postgres' for d in dbs) else 'no')
+          ")
+
+          if [ "$HAS_POSTGRES" != "yes" ]; then
+            echo "Analytics database not found, adding it explicitly..."
+            curl -sf -X POST http://localhost:3000/api/database \
+              -H "Content-Type: application/json" \
+              -H "X-Metabase-Session: $SESSION_TOKEN" \
+              -d "{
+                \"engine\": \"postgres\",
+                \"name\": \"Analytics\",
+                \"details\": {
+                  \"host\": \"analytics-db\",
+                  \"port\": 5432,
+                  \"dbname\": \"${{ env.ANALYTICS_DB_NAME }}\",
+                  \"user\": \"${{ env.ANALYTICS_DB_USER }}\",
+                  \"password\": \"${{ env.ANALYTICS_DB_PASSWORD }}\",
+                  \"ssl\": false
+                }
+              }" > /dev/null
+            echo "Analytics database added"
+          else
+            echo "Analytics database already registered"
+          fi
+
           # Wait for Metabase to sync the database schema
           echo "Waiting for Metabase to sync database..."
           sleep 30
