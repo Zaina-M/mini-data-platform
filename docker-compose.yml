@@ -30,6 +30,8 @@ x-airflow-common: &airflow-common
       condition: service_healthy
     minio:
       condition: service_healthy
+    analytics-db:
+      condition: service_healthy
   networks:
     - data-platform
 
@@ -99,6 +101,7 @@ services:
   analytics-db:
     image: postgres:15-alpine
     container_name: analytics-db
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${ANALYTICS_DB_USER}
       POSTGRES_PASSWORD: ${ANALYTICS_DB_PASSWORD}
