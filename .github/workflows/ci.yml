@@ -315,9 +315,11 @@ jobs:
       # ── 1. Build and start ALL platform services ────────────────
       - name: Build and start all services
         run: |
-          # Create required directories for bind mounts
+          # Create required directories for bind mounts with proper permissions
           mkdir -p airflow/logs/scheduler airflow/logs/dag_processor_manager airflow/logs/pipeline
           mkdir -p airflow/plugins airflow/config
+          # Airflow container runs as UID 50000, grant write access
+          chmod -R 777 airflow/logs
           
           docker compose up -d --build
           echo "Services starting..."
