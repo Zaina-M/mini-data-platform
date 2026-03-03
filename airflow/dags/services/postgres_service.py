@@ -7,7 +7,8 @@ Provides high-level operations for PostgreSQL database:
 - Table operations
 """
 
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -87,9 +88,52 @@ class PostgresService:
         """Initialize PostgreSQL service."""
         pass
 
+    ROW_MAX_RETRIES = 3
+
+    def _insert_row_with_retry(self, cursor, row, idx: int) -> bool:
+        """
+        Insert a single row with up to ROW_MAX_RETRIES attempts.
+
+        Returns True on success, False after all retries exhausted.
+        """
+        for attempt in range(1, self.ROW_MAX_RETRIES + 1):
+            try:
+                cursor.execute(
+                    self.UPSERT_QUERY,
+                    (
+                        row["order_id"],
+                        row["product_name"],
+                        int(row["quantity"]),
+                        float(row["unit_price"]),
+                        row["order_date"],
+                        row["customer_id"],
+                        row["country"],
+                        float(row["total_amount"]),
+                        row["ingestion_timestamp"],
+                    ),
+                )
+                return True
+            except Exception as e:
+                if attempt < self.ROW_MAX_RETRIES:
+                    logger.warning(
+                        f"Row {idx} (order_id={row.get('order_id', '?')}) "
+                        f"attempt {attempt}/{self.ROW_MAX_RETRIES} failed: {e}  — retrying"
+                    )
+                    time.sleep(0.1 * attempt)  # brief back-off
+                else:
+                    logger.error(
+                        f"Row {idx} (order_id={row.get('order_id', '?')}) "
+                        f"REJECTED after {self.ROW_MAX_RETRIES} attempts: {e}"
+                    )
+        return False
+
     def load_sales_data(self, df: pd.DataFrame, batch_size: int = 1000) -> LoadResult:
         """
         Load sales data into PostgreSQL with upsert.
+
+        Each row is retried up to ROW_MAX_RETRIES times. Permanently
+        failed rows are logged and skipped so the rest of the batch
+        continues successfully.
 
         Args:
             df: DataFrame with sales data
@@ -101,44 +145,37 @@ class PostgresService:
         start_time = datetime.now()
         rows_processed = 0
         rows_failed = 0
+        failed_order_ids: List[str] = []
 
         logger.info(f"Starting load of {len(df)} rows to {self.SALES_TABLE}")
 
         try:
             with postgres_connection() as (conn, cursor):
                 for idx, row in df.iterrows():
-                    try:
-                        cursor.execute(
-                            self.UPSERT_QUERY,
-                            (
-                                row["order_id"],
-                                row["product_name"],
-                                int(row["quantity"]),
-                                float(row["unit_price"]),
-                                row["order_date"],
-                                row["customer_id"],
-                                row["country"],
-                                float(row["total_amount"]),
-                                row["ingestion_timestamp"],
-                            ),
-                        )
+                    if self._insert_row_with_retry(cursor, row, idx):
                         rows_processed += 1
-
-                        # Log progress periodically
-                        if rows_processed % batch_size == 0:
-                            logger.info(f"Processed {rows_processed}/{len(df)} rows")
-
-                    except Exception as e:
-                        logger.warning(f"Failed to insert row {idx}: {e}")
+                    else:
                         rows_failed += 1
+                        failed_order_ids.append(str(row.get("order_id", "unknown")))
+
+                    # Log progress periodically
+                    total_done = rows_processed + rows_failed
+                    if total_done % batch_size == 0:
+                        logger.info(f"Progress: {total_done}/{len(df)} rows ({rows_failed} failed)")
 
                 # Commit happens automatically via context manager
 
             duration = (datetime.now() - start_time).total_seconds()
 
+            if failed_order_ids:
+                logger.warning(
+                    f"{rows_failed} row(s) permanently failed after "
+                    f"{self.ROW_MAX_RETRIES} retries each: {failed_order_ids}"
+                )
+
             result = LoadResult(
                 success=True,
-                rows_inserted=rows_processed,  # Can't distinguish insert vs update easily
+                rows_inserted=rows_processed,
                 rows_updated=0,
                 rows_failed=rows_failed,
                 duration_seconds=duration,
@@ -146,8 +183,8 @@ class PostgresService:
 
             rate = rows_processed / duration if duration > 0 else float("inf")
             logger.info(
-                f"Load completed: {rows_processed} rows in {duration:.2f}s "
-                f"({rate:.0f} rows/sec)"
+                f"Load completed: {rows_processed} inserted, {rows_failed} failed "
+                f"in {duration:.2f}s ({rate:.0f} rows/sec)"
             )
 
             return result
