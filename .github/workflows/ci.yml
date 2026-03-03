@@ -611,12 +611,15 @@ jobs:
           DB_ID=$(curl -sf http://localhost:3000/api/database \
             -H "X-Metabase-Session: $SESSION_TOKEN" | python3 -c "
           import json, sys
-          dbs = json.load(sys.stdin).get('data', [])
+          raw = json.load(sys.stdin)
+          # Handle both list and dict response formats
+          dbs = raw if isinstance(raw, list) else raw.get('data', raw.get('databases', []))
+          if isinstance(dbs, dict):
+              dbs = [dbs]
+          print(f'Found {len(dbs)} databases:', file=sys.stderr)
           for db in dbs:
-              if db.get('engine') == 'postgres' and 'analytics' in db.get('name', '').lower():
-                  print(db['id'])
-                  sys.exit(0)
-          # Fallback: use the first non-sample postgres database
+              print(f'  id={db.get(\"id\")} name={db.get(\"name\")} engine={db.get(\"engine\")}', file=sys.stderr)
+          # Find analytics postgres database
           for db in dbs:
               if db.get('engine') == 'postgres':
                   print(db['id'])
