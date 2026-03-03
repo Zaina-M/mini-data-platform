@@ -620,9 +620,14 @@ jobs:
             }')
 
           # Parse and verify results
-          python3 -c "
+          echo "$QUERY_RESULT" | python3 -c "
           import json, sys
-          result = json.loads('''$QUERY_RESULT''')
+
+          try:
+              result = json.load(sys.stdin)
+          except json.JSONDecodeError as e:
+              print(f'Failed to parse Metabase response: {e}')
+              sys.exit(1)
 
           if 'error' in result:
               print(f'Metabase query error: {result[\"error\"]}')
