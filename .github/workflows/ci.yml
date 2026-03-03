@@ -779,6 +779,11 @@ jobs:
       - name: Deploy containers to test environment
         run: |
           echo "Deploying to test environment..."
+          # Create required directories for bind mounts with proper permissions
+          mkdir -p airflow/logs/scheduler airflow/logs/dag_processor_manager airflow/logs/pipeline
+          mkdir -p airflow/plugins airflow/config
+          chmod -R 777 airflow/logs
+
           docker compose up -d --build
           echo "All containers deployed"
 
@@ -798,16 +803,47 @@ jobs:
 
           echo "Running health checks..."
           wait_for "MinIO" "curl -sf http://localhost:9000/minio/health/live" 36
+          wait_for "Airflow DB" "docker exec airflow-db pg_isready -U ${{ env.AIRFLOW_DB_USER }}" 36
           wait_for "PostgreSQL" "docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}" 36
 
           echo "Waiting for airflow-init..."
           for i in $(seq 1 60); do
             STATUS=$(docker inspect --format='{{.State.Status}}' airflow-init 2>/dev/null || echo "unknown")
-            if [ "$STATUS" = "exited" ]; then break; fi
+            if [ "$STATUS" = "exited" ]; then
+              EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' airflow-init)
+              if [ "$EXIT_CODE" = "0" ]; then
+                echo "  ✓ airflow-init completed"
+                break
+              else
+                echo "  ✗ airflow-init exited with code $EXIT_CODE"
+                docker logs airflow-init --tail 30
+                exit 1
+              fi
+            fi
             sleep 5
           done
 
-          wait_for "Airflow Scheduler" "docker exec airflow-scheduler airflow dags list" 60
+          # Wait for scheduler container to be running
+          for i in $(seq 1 30); do
+            SCHED_STATUS=$(docker inspect --format='{{.State.Status}}' airflow-scheduler 2>/dev/null || echo "not-found")
+            if [ "$SCHED_STATUS" = "running" ]; then break; fi
+            sleep 5
+          done
+
+          # Wait for Airflow CLI to be responsive
+          for i in $(seq 1 60); do
+            if docker exec airflow-scheduler airflow db check > /dev/null 2>&1; then
+              echo "  ✓ Airflow Scheduler: healthy"
+              break
+            fi
+            if [ $i -eq 60 ]; then
+              echo "  ✗ Airflow Scheduler: FAILED"
+              docker logs airflow-scheduler --tail 50
+              exit 1
+            fi
+            sleep 5
+          done
+
           wait_for "Metabase" "curl -sf http://localhost:3000/api/health" 60
           echo "All services healthy in test environment"
 
