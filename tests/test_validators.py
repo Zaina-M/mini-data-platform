@@ -9,7 +9,6 @@ import sys
 from datetime import datetime
 
 import pandas as pd
-
 from validation.validators import DataValidator, ValidationResult, ValidationStatus
 
 # Add dags directory to path
