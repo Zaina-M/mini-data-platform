@@ -1,4 +1,3 @@
-
 x-airflow-common: &airflow-common
   build:
     context: ./airflow
@@ -33,7 +32,7 @@ x-airflow-common: &airflow-common
     - data-platform
 
 services:
-  # MinIO - S3-compatible object storage for raw data
+  # ── MinIO - S3-compatible object storage for raw data ─────────────────────
   minio:
     image: minio/minio:latest
     container_name: minio
@@ -48,13 +47,14 @@ services:
       - minio-data:/data
     healthcheck:
       test: ["CMD", "mc", "ready", "local"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 20
+      start_period: 20s
     networks:
       - data-platform
 
-  # MinIO bucket initialization
+  # ── MinIO bucket initialization ───────────────────────────────────────────
   minio-init:
     image: minio/mc:latest
     container_name: minio-init
@@ -76,7 +76,7 @@ services:
     networks:
       - data-platform
 
-  # Airflow metadata database
+  # ── Airflow metadata database ─────────────────────────────────────────────
   airflow-db:
     image: postgres:15-alpine
     container_name: airflow-db
@@ -87,14 +87,15 @@ services:
     volumes:
       - airflow-db-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 20
+      start_period: 20s
     networks:
       - data-platform
 
-  # Analytics PostgreSQL database
+  # ── Analytics PostgreSQL database ─────────────────────────────────────────
   analytics-db:
     image: postgres:15-alpine
     container_name: analytics-db
@@ -109,39 +110,15 @@ services:
       - analytics-db-data:/var/lib/postgresql/data
       - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
-      interval: 10s
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 20
+      start_period: 30s
     networks:
       - data-platform
 
-  # Airflow webserver
-  airflow-webserver:
-    <<: *airflow-common
-    container_name: airflow-webserver
-    command: bash -c "airflow users create --username ${AIRFLOW_ADMIN_USER} --password ${AIRFLOW_ADMIN_PASSWORD} --firstname Admin --lastname User --role Admin --email admin@example.com || true && airflow webserver"
-    ports:
-      - "8080:8080"
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-    depends_on:
-      airflow-init:
-        condition: service_completed_successfully
-
-  # Airflow scheduler
-  airflow-scheduler:
-    <<: *airflow-common
-    container_name: airflow-scheduler
-    command: airflow scheduler
-    depends_on:
-      airflow-init:
-        condition: service_completed_successfully
-
-  # Airflow initialization
+  # ── Airflow initialization ────────────────────────────────────────────────
   airflow-init:
     <<: *airflow-common
     container_name: airflow-init
@@ -155,7 +132,52 @@ services:
       airflow-db:
         condition: service_healthy
 
-  # Metabase - Business Intelligence dashboards
+  # ── Airflow webserver ─────────────────────────────────────────────────────
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: airflow-webserver
+    command: bash -c "airflow users create --username ${AIRFLOW_ADMIN_USER} --password ${AIRFLOW_ADMIN_PASSWORD} --firstname Admin --lastname User --role Admin --email admin@example.com || true && airflow webserver"
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ── Airflow scheduler ─────────────────────────────────────────────────────
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: airflow-scheduler
+    command: airflow scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ── Metabase metadata database ────────────────────────────────────────────
+  metabase-db:
+    image: postgres:15-alpine
+    container_name: metabase-db
+    environment:
+      POSTGRES_USER: ${METABASE_DB_USER}
+      POSTGRES_PASSWORD: ${METABASE_DB_PASSWORD}
+      POSTGRES_DB: ${METABASE_DB_NAME}
+    volumes:
+      - metabase-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    networks:
+      - data-platform
+
+  # ── Metabase - Business Intelligence dashboards ───────────────────────────
   metabase:
     image: metabase/metabase:latest
     container_name: metabase
@@ -173,24 +195,6 @@ services:
         condition: service_healthy
       analytics-db:
         condition: service_healthy
-    networks:
-      - data-platform
-
-  # Metabase metadata database
-  metabase-db:
-    image: postgres:15-alpine
-    container_name: metabase-db
-    environment:
-      POSTGRES_USER: ${METABASE_DB_USER}
-      POSTGRES_PASSWORD: ${METABASE_DB_PASSWORD}
-      POSTGRES_DB: ${METABASE_DB_NAME}
-    volumes:
-      - metabase-db-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - data-platform
 
