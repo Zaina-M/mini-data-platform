@@ -40,6 +40,11 @@ env:
   METABASE_DB_USER:     ${{ secrets.METABASE_DB_USER }}
   METABASE_DB_PASSWORD: ${{ secrets.METABASE_DB_PASSWORD }}
 
+# ── Reusable step for writing .env ───────────────────────────────────────────
+# NOTE: echo statements have NO indentation inside run: blocks so the .env
+# file is written without leading spaces. Heredocs (<<EOF) inherit YAML
+# indentation and produce broken variable names like "   KEY=value".
+
 jobs:
   lint:
     name: Code Quality
@@ -55,8 +60,7 @@ jobs:
           cache: 'pip'
 
       - name: Install linting tools
-        run: |
-          pip install flake8 black isort mypy
+        run: pip install flake8 black isort mypy
 
       - name: Run flake8
         run: |
@@ -65,12 +69,10 @@ jobs:
             --ignore=E501,W503,E402,E121
 
       - name: Check formatting with black
-        run: |
-          black --check --diff airflow/dags/ data-generator/ tests/
+        run: black --check --diff airflow/dags/ data-generator/ tests/
 
       - name: Check import sorting
-        run: |
-          isort --check-only --diff airflow/dags/ data-generator/ tests/
+        run: isort --check-only --diff airflow/dags/ data-generator/ tests/
 
   unit-tests:
     name: Unit Tests
@@ -121,12 +123,10 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: |
-          pip install pytest pandas pandera
+        run: pip install pytest pandas pandera
 
       - name: Run schema tests
-        run: |
-          pytest tests/test_schemas.py tests/test_validators.py -v --tb=short
+        run: pytest tests/test_schemas.py tests/test_validators.py -v --tb=short
 
   test-transformers:
     name: Test Transformers
@@ -142,12 +142,10 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: |
-          pip install pytest pandas pandera numpy
+        run: pip install pytest pandas pandera numpy
 
       - name: Run transformer tests
-        run: |
-          pytest tests/test_data_cleaner.py tests/test_data_enricher.py -v --tb=short
+        run: pytest tests/test_data_cleaner.py tests/test_data_enricher.py -v --tb=short
 
   test-services:
     name: Test Services
@@ -163,12 +161,10 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: |
-          pip install pytest pandas minio psycopg2-binary pandera
+        run: pip install pytest pandas minio psycopg2-binary pandera
 
       - name: Run service tests
-        run: |
-          pytest tests/test_minio_service.py tests/test_postgres_service.py -v --tb=short
+        run: pytest tests/test_minio_service.py tests/test_postgres_service.py -v --tb=short
 
   test-integration:
     name: Integration Tests
@@ -185,12 +181,10 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: |
-          pip install pytest pandas pandera minio psycopg2-binary numpy
+        run: pip install pytest pandas pandera minio psycopg2-binary numpy
 
       - name: Run integration tests
-        run: |
-          pytest tests/test_integration.py -v --tb=short
+        run: pytest tests/test_integration.py -v --tb=short
 
   validate-dags:
     name: Validate Airflow DAGs
@@ -206,8 +200,7 @@ jobs:
           cache: 'pip'
 
       - name: Install dependencies
-        run: |
-          pip install apache-airflow==2.8.1 pandas minio psycopg2-binary pandera
+        run: pip install apache-airflow==2.8.1 pandas minio psycopg2-binary pandera
 
       - name: Validate DAG syntax
         env:
@@ -247,8 +240,7 @@ jobs:
         run: pip install sqlfluff
 
       - name: Lint SQL files
-        run: |
-          sqlfluff lint sql/ --dialect postgres || true
+        run: sqlfluff lint sql/ --dialect postgres || true
 
   docker-build:
     name: Docker Build Test
@@ -259,29 +251,28 @@ jobs:
 
       - name: Create .env file for docker compose
         run: |
-          cat > .env << EOF
-          MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}
-          MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
-          MINIO_ENDPOINT=minio:9000
-          AIRFLOW_DB_USER=${{ secrets.AIRFLOW_DB_USER }}
-          AIRFLOW_DB_PASSWORD=${{ secrets.AIRFLOW_DB_PASSWORD }}
-          AIRFLOW_DB_NAME=airflow
-          AIRFLOW_FERNET_KEY=${{ secrets.AIRFLOW_FERNET_KEY }}
-          AIRFLOW_SECRET_KEY=${{ secrets.AIRFLOW_SECRET_KEY }}
-          AIRFLOW_ADMIN_USER=${{ secrets.AIRFLOW_ADMIN_USER }}
-          AIRFLOW_ADMIN_PASSWORD=${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
-          ANALYTICS_DB_HOST=analytics-db
-          ANALYTICS_DB_PORT=5432
-          ANALYTICS_DB_NAME=analytics
-          ANALYTICS_DB_USER=${{ secrets.ANALYTICS_DB_USER }}
-          ANALYTICS_DB_PASSWORD=${{ secrets.ANALYTICS_DB_PASSWORD }}
-          METABASE_DB_HOST=metabase-db
-          METABASE_DB_PORT=5432
-          METABASE_DB_NAME=metabase
-          METABASE_DB_USER=${{ secrets.METABASE_DB_USER }}
-          METABASE_DB_PASSWORD=${{ secrets.METABASE_DB_PASSWORD }}
-          EOF
-          echo ".env file created"
+          echo "MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}" > .env
+          echo "MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}" >> .env
+          echo "MINIO_ENDPOINT=minio:9000" >> .env
+          echo "AIRFLOW_DB_USER=${{ secrets.AIRFLOW_DB_USER }}" >> .env
+          echo "AIRFLOW_DB_PASSWORD=${{ secrets.AIRFLOW_DB_PASSWORD }}" >> .env
+          echo "AIRFLOW_DB_NAME=airflow" >> .env
+          echo "AIRFLOW_FERNET_KEY=${{ secrets.AIRFLOW_FERNET_KEY }}" >> .env
+          echo "AIRFLOW_SECRET_KEY=${{ secrets.AIRFLOW_SECRET_KEY }}" >> .env
+          echo "AIRFLOW_ADMIN_USER=${{ secrets.AIRFLOW_ADMIN_USER }}" >> .env
+          echo "AIRFLOW_ADMIN_PASSWORD=${{ secrets.AIRFLOW_ADMIN_PASSWORD }}" >> .env
+          echo "ANALYTICS_DB_HOST=analytics-db" >> .env
+          echo "ANALYTICS_DB_PORT=5432" >> .env
+          echo "ANALYTICS_DB_NAME=analytics" >> .env
+          echo "ANALYTICS_DB_USER=${{ secrets.ANALYTICS_DB_USER }}" >> .env
+          echo "ANALYTICS_DB_PASSWORD=${{ secrets.ANALYTICS_DB_PASSWORD }}" >> .env
+          echo "METABASE_DB_HOST=metabase-db" >> .env
+          echo "METABASE_DB_PORT=5432" >> .env
+          echo "METABASE_DB_NAME=metabase" >> .env
+          echo "METABASE_DB_USER=${{ secrets.METABASE_DB_USER }}" >> .env
+          echo "METABASE_DB_PASSWORD=${{ secrets.METABASE_DB_PASSWORD }}" >> .env
+          echo ".env written — verifying (keys only):"
+          cut -d= -f1 .env
 
       - name: Validate docker-compose syntax
         run: |
@@ -309,8 +300,7 @@ jobs:
           sudo apt-get install -y trivy
 
       - name: Run Trivy filesystem scan
-        run: |
-          trivy fs --severity CRITICAL,HIGH --exit-code 0 .
+        run: trivy fs --severity CRITICAL,HIGH --exit-code 0 .
 
   data-flow-validation:
     name: Data Flow Validation
@@ -324,37 +314,35 @@ jobs:
       - name: Install Python clients
         run: pip install minio pandas > /dev/null
 
-      # ── 1. Write .env so docker compose receives all credentials ───────────
+      # ── 1. Write .env — one echo per line, no indentation issues ───────────
       - name: Create .env file for docker compose
         run: |
-          cat > .env << EOF
-          MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}
-          MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
-          MINIO_ENDPOINT=minio:9000
-          AIRFLOW_DB_USER=${{ secrets.AIRFLOW_DB_USER }}
-          AIRFLOW_DB_PASSWORD=${{ secrets.AIRFLOW_DB_PASSWORD }}
-          AIRFLOW_DB_NAME=airflow
-          AIRFLOW_FERNET_KEY=${{ secrets.AIRFLOW_FERNET_KEY }}
-          AIRFLOW_SECRET_KEY=${{ secrets.AIRFLOW_SECRET_KEY }}
-          AIRFLOW_ADMIN_USER=${{ secrets.AIRFLOW_ADMIN_USER }}
-          AIRFLOW_ADMIN_PASSWORD=${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
-          ANALYTICS_DB_HOST=analytics-db
-          ANALYTICS_DB_PORT=5432
-          ANALYTICS_DB_NAME=analytics
-          ANALYTICS_DB_USER=${{ secrets.ANALYTICS_DB_USER }}
-          ANALYTICS_DB_PASSWORD=${{ secrets.ANALYTICS_DB_PASSWORD }}
-          METABASE_DB_HOST=metabase-db
-          METABASE_DB_PORT=5432
-          METABASE_DB_NAME=metabase
-          METABASE_DB_USER=${{ secrets.METABASE_DB_USER }}
-          METABASE_DB_PASSWORD=${{ secrets.METABASE_DB_PASSWORD }}
-          EOF
-          echo ".env file created"
+          echo "MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}" > .env
+          echo "MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}" >> .env
+          echo "MINIO_ENDPOINT=minio:9000" >> .env
+          echo "AIRFLOW_DB_USER=${{ secrets.AIRFLOW_DB_USER }}" >> .env
+          echo "AIRFLOW_DB_PASSWORD=${{ secrets.AIRFLOW_DB_PASSWORD }}" >> .env
+          echo "AIRFLOW_DB_NAME=airflow" >> .env
+          echo "AIRFLOW_FERNET_KEY=${{ secrets.AIRFLOW_FERNET_KEY }}" >> .env
+          echo "AIRFLOW_SECRET_KEY=${{ secrets.AIRFLOW_SECRET_KEY }}" >> .env
+          echo "AIRFLOW_ADMIN_USER=${{ secrets.AIRFLOW_ADMIN_USER }}" >> .env
+          echo "AIRFLOW_ADMIN_PASSWORD=${{ secrets.AIRFLOW_ADMIN_PASSWORD }}" >> .env
+          echo "ANALYTICS_DB_HOST=analytics-db" >> .env
+          echo "ANALYTICS_DB_PORT=5432" >> .env
+          echo "ANALYTICS_DB_NAME=analytics" >> .env
+          echo "ANALYTICS_DB_USER=${{ secrets.ANALYTICS_DB_USER }}" >> .env
+          echo "ANALYTICS_DB_PASSWORD=${{ secrets.ANALYTICS_DB_PASSWORD }}" >> .env
+          echo "METABASE_DB_HOST=metabase-db" >> .env
+          echo "METABASE_DB_PORT=5432" >> .env
+          echo "METABASE_DB_NAME=metabase" >> .env
+          echo "METABASE_DB_USER=${{ secrets.METABASE_DB_USER }}" >> .env
+          echo "METABASE_DB_PASSWORD=${{ secrets.METABASE_DB_PASSWORD }}" >> .env
+          echo ".env written — verifying (keys only):"
+          cut -d= -f1 .env
 
       # ── 2. Build and start ALL platform services ────────────────────────────
       - name: Build and start all services
         run: |
-          # Clean any leftover state from previous runs
           docker compose down -v --remove-orphans 2>/dev/null || true
           docker volume prune -f
 
@@ -433,9 +421,7 @@ jobs:
             fi
             if [ $i -eq 60 ]; then
               echo "  ✗ Airflow database check failed after 60 attempts"
-              echo "--- Container Status ---"
               docker compose ps
-              echo "--- Scheduler Logs ---"
               docker logs airflow-scheduler --tail 100
               exit 1
             fi
@@ -456,7 +442,7 @@ jobs:
           echo "All services healthy"
           docker compose ps
 
-      # ── 4. Verify MinIO buckets were created ────────────────────────────────
+      # ── 4. Verify MinIO buckets ──────────────────────────────────────────────
       - name: Verify MinIO buckets
         run: |
           python3 -c "
@@ -549,7 +535,6 @@ jobs:
       # ── 9. Verify data landed in PostgreSQL ──────────────────────────────────
       - name: Verify data in PostgreSQL
         run: |
-          echo "Checking sales table for loaded data..."
           ROW_COUNT=$(docker exec analytics-db psql \
             -U ${{ env.ANALYTICS_DB_USER }} \
             -d ${{ env.ANALYTICS_DB_NAME }} \
@@ -564,35 +549,31 @@ jobs:
             exit 1
           fi
 
-          echo ""
           echo "=== Sample data ==="
           docker exec analytics-db psql \
             -U ${{ env.ANALYTICS_DB_USER }} \
             -d ${{ env.ANALYTICS_DB_NAME }} -c \
             "SELECT order_id, product_name, quantity, unit_price, total_amount, country FROM sales LIMIT 5;"
 
-          echo ""
-          echo "=== Daily sales summary view ==="
+          echo "=== Daily sales summary ==="
           docker exec analytics-db psql \
             -U ${{ env.ANALYTICS_DB_USER }} \
             -d ${{ env.ANALYTICS_DB_NAME }} -c \
             "SELECT * FROM daily_sales_summary LIMIT 5;"
 
-          echo ""
-          echo "=== Product performance view ==="
+          echo "=== Product performance ==="
           docker exec analytics-db psql \
             -U ${{ env.ANALYTICS_DB_USER }} \
             -d ${{ env.ANALYTICS_DB_NAME }} -c \
             "SELECT * FROM product_performance LIMIT 5;"
 
-          echo ""
-          echo "=== Country analysis view ==="
+          echo "=== Country analysis ==="
           docker exec analytics-db psql \
             -U ${{ env.ANALYTICS_DB_USER }} \
             -d ${{ env.ANALYTICS_DB_NAME }} -c \
             "SELECT * FROM country_analysis LIMIT 5;"
 
-      # ── 10. Verify file archived in MinIO ────────────────────────────────────
+      # ── 10. Verify MinIO archival ─────────────────────────────────────────────
       - name: Verify MinIO archival
         run: |
           python3 -c "
@@ -679,7 +660,7 @@ jobs:
           ")
 
           if [ "$HAS_POSTGRES" != "yes" ]; then
-            echo "Analytics database not found, adding it explicitly..."
+            echo "Adding analytics database to Metabase..."
             curl -sf -X POST http://localhost:3000/api/database \
               -H "Content-Type: application/json" \
               -H "X-Metabase-Session: $SESSION_TOKEN" \
@@ -703,7 +684,6 @@ jobs:
           echo "Waiting for Metabase to sync database..."
           sleep 30
 
-          echo "Finding analytics database..."
           DB_ID=$(curl -sf http://localhost:3000/api/database \
             -H "X-Metabase-Session: $SESSION_TOKEN" | python3 -c "
           import json, sys
@@ -719,7 +699,6 @@ jobs:
           ")
           echo "Using database ID: $DB_ID"
 
-          echo "Running query through Metabase API..."
           QUERY_RESULT=$(curl -sf -X POST http://localhost:3000/api/dataset \
             -H "Content-Type: application/json" \
             -H "X-Metabase-Session: $SESSION_TOKEN" \
@@ -733,77 +712,63 @@ jobs:
 
           echo "$QUERY_RESULT" | python3 -c "
           import json, sys
-
           try:
               result = json.load(sys.stdin)
           except json.JSONDecodeError as e:
               print(f'Failed to parse Metabase response: {e}')
               sys.exit(1)
-
           if 'error' in result:
               print(f'Metabase query error: {result[\"error\"]}')
               sys.exit(1)
-
           rows = result.get('data', {}).get('rows', [])
           if not rows:
               print('VISUALIZATION CHECK FAILED: no data returned from Metabase')
               sys.exit(1)
-
           total_rows, total_revenue, countries = rows[0]
-          print(f'Metabase query results:')
           print(f'  Total rows:    {total_rows}')
           print(f'  Total revenue: {total_revenue}')
           print(f'  Countries:     {countries}')
-
           if int(total_rows) > 0:
-              print('VISUALIZATION CHECK PASSED: Metabase can query sales data from PostgreSQL')
+              print('VISUALIZATION CHECK PASSED: Metabase can query sales data')
           else:
               print('VISUALIZATION CHECK FAILED: Metabase returned 0 rows')
               sys.exit(1)
           "
 
-      # ── 12. Print full data flow summary ─────────────────────────────────────
+      # ── 12. Data flow summary ────────────────────────────────────────────────
       - name: Data flow validation summary
         if: always()
         run: |
           echo "============================================="
           echo "   DATA FLOW VALIDATION SUMMARY"
           echo "============================================="
-          echo ""
           echo "  MinIO (Ingestion)    → CSV uploaded to raw-sales bucket"
           echo "  Airflow (Processing) → DAG triggered and completed"
           echo "  PostgreSQL (Storage) → Data loaded into sales table"
           echo "  Metabase (Visualize) → Queried sales data successfully"
-          echo ""
           echo "  Full pipeline: MinIO → Airflow → PostgreSQL → Metabase"
           echo "============================================="
 
-      # ── 13. Collect debug logs on failure ────────────────────────────────────
+      # ── 13. Debug logs on failure ────────────────────────────────────────────
       - name: Collect debug logs
         if: failure()
         run: |
           echo "=== Docker container status ==="
           docker compose ps -a
-          echo ""
           echo "=== metabase-db logs ==="
           docker compose logs metabase-db --tail 50
-          echo ""
           echo "=== analytics-db logs ==="
           docker compose logs analytics-db --tail 50
-          echo ""
-          echo "=== Airflow scheduler logs ==="
+          echo "=== airflow-scheduler logs ==="
           docker compose logs airflow-scheduler --tail 100
-          echo ""
-          echo "=== Airflow webserver logs ==="
+          echo "=== airflow-webserver logs ==="
           docker compose logs airflow-webserver --tail 50
-          echo ""
-          echo "=== Metabase logs ==="
+          echo "=== metabase logs ==="
           docker compose logs metabase --tail 50
 
       - name: Stop services
         if: always()
-        run: |
-          docker compose down -v --remove-orphans
+        run: docker compose down -v --remove-orphans
 
   cd-deploy-test:
     name: CD - Deploy to Test Environment
@@ -815,36 +780,34 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # ── 1. Write .env so docker compose receives all credentials ───────────
+      # ── 1. Write .env — one echo per line, no indentation issues ───────────
       - name: Create .env file for docker compose
         run: |
-          cat > .env << EOF
-          MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}
-          MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
-          MINIO_ENDPOINT=minio:9000
-          AIRFLOW_DB_USER=${{ secrets.AIRFLOW_DB_USER }}
-          AIRFLOW_DB_PASSWORD=${{ secrets.AIRFLOW_DB_PASSWORD }}
-          AIRFLOW_DB_NAME=airflow
-          AIRFLOW_FERNET_KEY=${{ secrets.AIRFLOW_FERNET_KEY }}
-          AIRFLOW_SECRET_KEY=${{ secrets.AIRFLOW_SECRET_KEY }}
-          AIRFLOW_ADMIN_USER=${{ secrets.AIRFLOW_ADMIN_USER }}
-          AIRFLOW_ADMIN_PASSWORD=${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
-          ANALYTICS_DB_HOST=analytics-db
-          ANALYTICS_DB_PORT=5432
-          ANALYTICS_DB_NAME=analytics
-          ANALYTICS_DB_USER=${{ secrets.ANALYTICS_DB_USER }}
-          ANALYTICS_DB_PASSWORD=${{ secrets.ANALYTICS_DB_PASSWORD }}
-          METABASE_DB_HOST=metabase-db
-          METABASE_DB_PORT=5432
-          METABASE_DB_NAME=metabase
-          METABASE_DB_USER=${{ secrets.METABASE_DB_USER }}
-          METABASE_DB_PASSWORD=${{ secrets.METABASE_DB_PASSWORD }}
-          EOF
-          echo ".env file created"
+          echo "MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}" > .env
+          echo "MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}" >> .env
+          echo "MINIO_ENDPOINT=minio:9000" >> .env
+          echo "AIRFLOW_DB_USER=${{ secrets.AIRFLOW_DB_USER }}" >> .env
+          echo "AIRFLOW_DB_PASSWORD=${{ secrets.AIRFLOW_DB_PASSWORD }}" >> .env
+          echo "AIRFLOW_DB_NAME=airflow" >> .env
+          echo "AIRFLOW_FERNET_KEY=${{ secrets.AIRFLOW_FERNET_KEY }}" >> .env
+          echo "AIRFLOW_SECRET_KEY=${{ secrets.AIRFLOW_SECRET_KEY }}" >> .env
+          echo "AIRFLOW_ADMIN_USER=${{ secrets.AIRFLOW_ADMIN_USER }}" >> .env
+          echo "AIRFLOW_ADMIN_PASSWORD=${{ secrets.AIRFLOW_ADMIN_PASSWORD }}" >> .env
+          echo "ANALYTICS_DB_HOST=analytics-db" >> .env
+          echo "ANALYTICS_DB_PORT=5432" >> .env
+          echo "ANALYTICS_DB_NAME=analytics" >> .env
+          echo "ANALYTICS_DB_USER=${{ secrets.ANALYTICS_DB_USER }}" >> .env
+          echo "ANALYTICS_DB_PASSWORD=${{ secrets.ANALYTICS_DB_PASSWORD }}" >> .env
+          echo "METABASE_DB_HOST=metabase-db" >> .env
+          echo "METABASE_DB_PORT=5432" >> .env
+          echo "METABASE_DB_NAME=metabase" >> .env
+          echo "METABASE_DB_USER=${{ secrets.METABASE_DB_USER }}" >> .env
+          echo "METABASE_DB_PASSWORD=${{ secrets.METABASE_DB_PASSWORD }}" >> .env
+          echo ".env written — verifying (keys only):"
+          cut -d= -f1 .env
 
       - name: Deploy containers to test environment
         run: |
-          echo "Deploying to test environment..."
           docker compose down -v --remove-orphans 2>/dev/null || true
           docker volume prune -f
 
@@ -869,7 +832,6 @@ jobs:
             echo "  ✗ $name: FAILED" && return 1
           }
 
-          echo "Running health checks..."
           wait_for "MinIO"       "curl -sf http://localhost:9000/minio/health/live" 60
           wait_for "Airflow DB"  "docker exec airflow-db pg_isready -U ${{ env.AIRFLOW_DB_USER }}" 60
           wait_for "PostgreSQL"  "docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}" 60
@@ -977,8 +939,7 @@ jobs:
 
       - name: Stop test environment
         if: always()
-        run: |
-          docker compose down -v --remove-orphans
+        run: docker compose down -v --remove-orphans
 
   all-tests-pass:
     name: All Tests Pass
