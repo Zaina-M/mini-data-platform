@@ -602,24 +602,47 @@ jobs:
       # ── 11. Verify Metabase can query the data ───────────────────────────────
       - name: Verify Metabase visualization layer
         run: |
+          API_BASE="http://localhost:3000"
+          METABASE_USER_EMAIL="ci@test.com"
+
+          curl_json() {
+            curl -sS --fail --connect-timeout 5 --max-time 30 --retry 5 --retry-delay 2 --retry-connrefused "$@"
+          }
+
+          echo "Waiting for Metabase API session properties..."
+          for i in $(seq 1 40); do
+            PROPS=$(curl_json "$API_BASE/api/session/properties" 2>/dev/null || true)
+            if [ -n "$PROPS" ]; then
+              break
+            fi
+            echo "  session properties not ready (attempt $i/40)"
+            sleep 3
+          done
+
+          if [ -z "$PROPS" ]; then
+            echo "Failed to retrieve Metabase session properties"
+            docker compose logs metabase --tail 100 || true
+            exit 1
+          fi
+
           echo "Setting up Metabase admin account..."
-          SETUP_TOKEN=$(curl -sf http://localhost:3000/api/session/properties | python3 -c "
+          SETUP_TOKEN=$(echo "$PROPS" | python3 -c "
           import sys, json
           props = json.load(sys.stdin)
-          token = props.get('setup-token', '')
-          print(token)
+          token = props.get('setup-token')
+          print(token if token else '')
           " 2>/dev/null || true)
 
-          if [ -n "$SETUP_TOKEN" ] && [ "$SETUP_TOKEN" != "None" ]; then
+          if [ -n "$SETUP_TOKEN" ] && [ "$SETUP_TOKEN" != "None" ] && [ "$SETUP_TOKEN" != "null" ]; then
             echo "Running first-time Metabase setup..."
-            curl -sf -X POST http://localhost:3000/api/setup \
+            SETUP_RESULT=$(curl_json -X POST "$API_BASE/api/setup" \
               -H "Content-Type: application/json" \
               -d "{
                 \"token\": \"$SETUP_TOKEN\",
                 \"user\": {
                   \"first_name\": \"CI\",
                   \"last_name\": \"Test\",
-                  \"email\": \"ci@test.com\",
+                  \"email\": \"$METABASE_USER_EMAIL\",
                   \"password\": \"${{ secrets.METABASE_ADMIN_PASSWORD }}\"
                 },
                 \"database\": {
@@ -637,31 +660,73 @@ jobs:
                   \"site_name\": \"CI Test\",
                   \"allow_tracking\": false
                 }
-              }" > /dev/null
-            echo "Metabase setup complete"
+              }")
+
+            echo "$SETUP_RESULT" | python3 -c "
+            import json, sys
+            result = json.load(sys.stdin)
+            if result.get('status') == 'ok' or result.get('id'):
+                print('Metabase setup complete')
+                sys.exit(0)
+            if 'errors' in result:
+                print(f'Metabase setup validation errors: {result[\"errors\"]}')
+            if 'error' in result:
+                print(f'Metabase setup error: {result[\"error\"]}')
+            sys.exit(1)
+            "
           else
             echo "Metabase already set up"
           fi
 
           echo "Authenticating with Metabase..."
-          SESSION_TOKEN=$(curl -sf -X POST http://localhost:3000/api/session \
-            -H "Content-Type: application/json" \
-            -d "{\"username\": \"ci@test.com\", \"password\": \"${{ secrets.METABASE_ADMIN_PASSWORD }}\"}" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          SESSION_TOKEN=""
+          for i in $(seq 1 30); do
+            SESSION_RESULT=$(curl_json -X POST "$API_BASE/api/session" \
+              -H "Content-Type: application/json" \
+              -d "{\"username\": \"$METABASE_USER_EMAIL\", \"password\": \"${{ secrets.METABASE_ADMIN_PASSWORD }}\"}" 2>/dev/null || true)
+
+            SESSION_TOKEN=$(echo "$SESSION_RESULT" | python3 -c "
+            import json, sys
+            try:
+                payload = json.load(sys.stdin)
+            except Exception:
+                print('')
+                sys.exit(0)
+            print(payload.get('id', ''))
+            " 2>/dev/null || true)
+
+            if [ -n "$SESSION_TOKEN" ]; then
+              break
+            fi
+
+            echo "  login not ready (attempt $i/30)"
+            sleep 2
+          done
+
+          if [ -z "$SESSION_TOKEN" ]; then
+            echo "Failed to authenticate with Metabase"
+            echo "Last login response: ${SESSION_RESULT:-<empty>}"
+            docker compose logs metabase --tail 100 || true
+            exit 1
+          fi
           echo "Session token acquired"
 
           echo "Checking for analytics database..."
-          HAS_POSTGRES=$(curl -sf http://localhost:3000/api/database \
-            -H "X-Metabase-Session: $SESSION_TOKEN" | python3 -c "
+          DATABASES_JSON=$(curl_json "$API_BASE/api/database" \
+            -H "X-Metabase-Session: $SESSION_TOKEN")
+
+          HAS_ANALYTICS_DB=$(echo "$DATABASES_JSON" | python3 -c "
           import json, sys
           raw = json.load(sys.stdin)
           dbs = raw if isinstance(raw, list) else raw.get('data', raw.get('databases', []))
-          print('yes' if any(d.get('engine') == 'postgres' for d in dbs) else 'no')
+          if isinstance(dbs, dict):
+              dbs = [dbs]
+          print('yes' if any(d.get('engine') == 'postgres' and d.get('name') == 'Analytics' for d in dbs) else 'no')
           ")
 
-          if [ "$HAS_POSTGRES" != "yes" ]; then
+          if [ "$HAS_ANALYTICS_DB" != "yes" ]; then
             echo "Adding analytics database to Metabase..."
-            curl -sf -X POST http://localhost:3000/api/database \
+            curl_json -X POST "$API_BASE/api/database" \
               -H "Content-Type: application/json" \
               -H "X-Metabase-Session: $SESSION_TOKEN" \
               -d "{
@@ -682,9 +747,9 @@ jobs:
           fi
 
           echo "Waiting for Metabase to sync database..."
-          sleep 30
+          sleep 20
 
-          DB_ID=$(curl -sf http://localhost:3000/api/database \
+          DB_ID=$(curl_json "$API_BASE/api/database" \
             -H "X-Metabase-Session: $SESSION_TOKEN" | python3 -c "
           import json, sys
           raw = json.load(sys.stdin)
@@ -692,14 +757,19 @@ jobs:
           if isinstance(dbs, dict):
               dbs = [dbs]
           for db in dbs:
-              if db.get('engine') == 'postgres':
+              if db.get('engine') == 'postgres' and db.get('name') == 'Analytics':
                   print(db['id'])
                   sys.exit(0)
-          print('1')
+          print('')
           ")
-          echo "Using database ID: $DB_ID"
 
-          QUERY_RESULT=$(curl -sf -X POST http://localhost:3000/api/dataset \
+          if [ -z "$DB_ID" ]; then
+            echo "Failed to resolve Analytics database ID in Metabase"
+            exit 1
+          fi
+
+          echo "Using database ID: $DB_ID"
+          QUERY_RESULT=$(curl_json -X POST "$API_BASE/api/dataset" \
             -H "Content-Type: application/json" \
             -H "X-Metabase-Session: $SESSION_TOKEN" \
             -d "{
@@ -707,7 +777,8 @@ jobs:
               \"type\": \"native\",
               \"native\": {
                 \"query\": \"SELECT COUNT(*) as total_rows, SUM(total_amount) as total_revenue, COUNT(DISTINCT country) as countries FROM sales\"
-              }
+              },
+              \"parameters\": []
             }")
 
           echo "$QUERY_RESULT" | python3 -c "
