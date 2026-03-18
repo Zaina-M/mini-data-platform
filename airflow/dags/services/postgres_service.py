@@ -280,13 +280,13 @@ class PostgresService:
                 row = cursor.fetchone()
 
             return {
-                "total_orders":     row[0] or 0,
-                "total_revenue":    float(row[1] or 0),
-                "avg_order_value":  float(row[2] or 0),
+                "total_orders": row[0] or 0,
+                "total_revenue": float(row[1] or 0),
+                "avg_order_value": float(row[2] or 0),
                 "unique_customers": row[3] or 0,
-                "countries":        row[4] or 0,
-                "first_order":      str(row[5]) if row[5] else None,
-                "last_order":       str(row[6]) if row[6] else None,
+                "countries": row[4] or 0,
+                "first_order": str(row[5]) if row[5] else None,
+                "last_order": str(row[6]) if row[6] else None,
             }
 
         except Exception as e:
@@ -355,3 +355,4 @@ class PostgresService:
         except Exception as e:
             logger.error(f"PostgreSQL health check failed: {e}")
             return False
+        
