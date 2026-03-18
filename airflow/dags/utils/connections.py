@@ -105,8 +105,10 @@ def get_postgres_connection():
             password=ConnectionConfig._postgres_password(),
         )
         logger.debug(
-            f"PostgreSQL connection established to "
-            f"{ConnectionConfig._postgres_host()}:{ConnectionConfig._postgres_port()}/{ConnectionConfig._postgres_db()}"
+           f"PostgreSQL connection established to "
+           f"{ConnectionConfig._postgres_host()}"
+           f":{ConnectionConfig._postgres_port()}"
+           f"/{ConnectionConfig._postgres_db()}"
         )
         return conn
     except Exception as e:
