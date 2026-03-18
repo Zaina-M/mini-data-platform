@@ -21,16 +21,16 @@ env:
   AIRFLOW_DB_NAME:      airflow
 
   # ── Airflow App ────────────────────────────────────────────────────────────
-  AIRFLOW_FERNET_KEY:   ${{ secrets.AIRFLOW_FERNET_KEY }}
-  AIRFLOW_SECRET_KEY:   ${{ secrets.AIRFLOW_SECRET_KEY }}
-  AIRFLOW_ADMIN_USER:   ${{ secrets.AIRFLOW_ADMIN_USER }}
+  AIRFLOW_FERNET_KEY:     ${{ secrets.AIRFLOW_FERNET_KEY }}
+  AIRFLOW_SECRET_KEY:     ${{ secrets.AIRFLOW_SECRET_KEY }}
+  AIRFLOW_ADMIN_USER:     ${{ secrets.AIRFLOW_ADMIN_USER }}
   AIRFLOW_ADMIN_PASSWORD: ${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
 
   # ── Analytics DB ───────────────────────────────────────────────────────────
-  ANALYTICS_DB_HOST:    analytics-db
-  ANALYTICS_DB_PORT:    '5432'
-  ANALYTICS_DB_NAME:    analytics
-  ANALYTICS_DB_USER:    ${{ secrets.ANALYTICS_DB_USER }}
+  ANALYTICS_DB_HOST:     analytics-db
+  ANALYTICS_DB_PORT:     '5432'
+  ANALYTICS_DB_NAME:     analytics
+  ANALYTICS_DB_USER:     ${{ secrets.ANALYTICS_DB_USER }}
   ANALYTICS_DB_PASSWORD: ${{ secrets.ANALYTICS_DB_PASSWORD }}
 
   # ── Metabase DB ────────────────────────────────────────────────────────────
@@ -257,6 +257,32 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Create .env file for docker compose
+        run: |
+          cat > .env << EOF
+          MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}
+          MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
+          MINIO_ENDPOINT=minio:9000
+          AIRFLOW_DB_USER=${{ secrets.AIRFLOW_DB_USER }}
+          AIRFLOW_DB_PASSWORD=${{ secrets.AIRFLOW_DB_PASSWORD }}
+          AIRFLOW_DB_NAME=airflow
+          AIRFLOW_FERNET_KEY=${{ secrets.AIRFLOW_FERNET_KEY }}
+          AIRFLOW_SECRET_KEY=${{ secrets.AIRFLOW_SECRET_KEY }}
+          AIRFLOW_ADMIN_USER=${{ secrets.AIRFLOW_ADMIN_USER }}
+          AIRFLOW_ADMIN_PASSWORD=${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
+          ANALYTICS_DB_HOST=analytics-db
+          ANALYTICS_DB_PORT=5432
+          ANALYTICS_DB_NAME=analytics
+          ANALYTICS_DB_USER=${{ secrets.ANALYTICS_DB_USER }}
+          ANALYTICS_DB_PASSWORD=${{ secrets.ANALYTICS_DB_PASSWORD }}
+          METABASE_DB_HOST=metabase-db
+          METABASE_DB_PORT=5432
+          METABASE_DB_NAME=metabase
+          METABASE_DB_USER=${{ secrets.METABASE_DB_USER }}
+          METABASE_DB_PASSWORD=${{ secrets.METABASE_DB_PASSWORD }}
+          EOF
+          echo ".env file created"
+
       - name: Validate docker-compose syntax
         run: |
           docker compose config -q
@@ -298,9 +324,40 @@ jobs:
       - name: Install Python clients
         run: pip install minio pandas > /dev/null
 
-      # ── 1. Build and start ALL platform services ────────────────
+      # ── 1. Write .env so docker compose receives all credentials ───────────
+      - name: Create .env file for docker compose
+        run: |
+          cat > .env << EOF
+          MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}
+          MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
+          MINIO_ENDPOINT=minio:9000
+          AIRFLOW_DB_USER=${{ secrets.AIRFLOW_DB_USER }}
+          AIRFLOW_DB_PASSWORD=${{ secrets.AIRFLOW_DB_PASSWORD }}
+          AIRFLOW_DB_NAME=airflow
+          AIRFLOW_FERNET_KEY=${{ secrets.AIRFLOW_FERNET_KEY }}
+          AIRFLOW_SECRET_KEY=${{ secrets.AIRFLOW_SECRET_KEY }}
+          AIRFLOW_ADMIN_USER=${{ secrets.AIRFLOW_ADMIN_USER }}
+          AIRFLOW_ADMIN_PASSWORD=${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
+          ANALYTICS_DB_HOST=analytics-db
+          ANALYTICS_DB_PORT=5432
+          ANALYTICS_DB_NAME=analytics
+          ANALYTICS_DB_USER=${{ secrets.ANALYTICS_DB_USER }}
+          ANALYTICS_DB_PASSWORD=${{ secrets.ANALYTICS_DB_PASSWORD }}
+          METABASE_DB_HOST=metabase-db
+          METABASE_DB_PORT=5432
+          METABASE_DB_NAME=metabase
+          METABASE_DB_USER=${{ secrets.METABASE_DB_USER }}
+          METABASE_DB_PASSWORD=${{ secrets.METABASE_DB_PASSWORD }}
+          EOF
+          echo ".env file created"
+
+      # ── 2. Build and start ALL platform services ────────────────────────────
       - name: Build and start all services
         run: |
+          # Clean any leftover state from previous runs
+          docker compose down -v --remove-orphans 2>/dev/null || true
+          docker volume prune -f
+
           mkdir -p airflow/logs/scheduler airflow/logs/dag_processor_manager airflow/logs/pipeline
           mkdir -p airflow/plugins airflow/config
           chmod -R 777 airflow/logs
@@ -308,7 +365,7 @@ jobs:
           docker compose up -d --build
           echo "Services starting..."
 
-      # ── 2. Wait for all services to be healthy ──────────────────
+      # ── 3. Wait for all services to be healthy ──────────────────────────────
       - name: Wait for all services
         run: |
           wait_for() {
@@ -325,9 +382,10 @@ jobs:
           }
 
           echo "Waiting for infrastructure..."
-          wait_for "MinIO"        "curl -sf http://localhost:9000/minio/health/live" 36
-          wait_for "Airflow DB"   "docker exec airflow-db pg_isready -U ${{ env.AIRFLOW_DB_USER }}" 36
-          wait_for "Analytics DB" "docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}" 36
+          wait_for "MinIO"        "curl -sf http://localhost:9000/minio/health/live" 60
+          wait_for "Airflow DB"   "docker exec airflow-db pg_isready -U ${{ env.AIRFLOW_DB_USER }}" 60
+          wait_for "Analytics DB" "docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}" 60
+          wait_for "Metabase DB"  "docker exec metabase-db pg_isready -U ${{ env.METABASE_DB_USER }}" 60
 
           echo "Waiting for airflow-init to complete..."
           for i in $(seq 1 60); do
@@ -398,13 +456,18 @@ jobs:
           echo "All services healthy"
           docker compose ps
 
-      # ── 3. Verify MinIO buckets were created ───────────────────
+      # ── 4. Verify MinIO buckets were created ────────────────────────────────
       - name: Verify MinIO buckets
         run: |
           python3 -c "
           import os
           from minio import Minio
-          client = Minio('localhost:9000', os.environ['MINIO_ROOT_USER'], os.environ['MINIO_ROOT_PASSWORD'], secure=False)
+          client = Minio(
+              'localhost:9000',
+              os.environ['MINIO_ROOT_USER'],
+              os.environ['MINIO_ROOT_PASSWORD'],
+              secure=False,
+          )
           buckets = [b.name for b in client.list_buckets()]
           print(f'Buckets found: {buckets}')
           for name in ['raw-sales', 'processed', 'archive']:
@@ -412,19 +475,23 @@ jobs:
           print('All required buckets exist')
           "
 
-      # ── 4. Verify PostgreSQL schema ────────────────────────────
+      # ── 5. Verify PostgreSQL schema ──────────────────────────────────────────
       - name: Verify PostgreSQL schema
         run: |
-          docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -c "
+          docker exec analytics-db psql \
+            -U ${{ env.ANALYTICS_DB_USER }} \
+            -d ${{ env.ANALYTICS_DB_NAME }} -c "
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
           "
-          docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -c "
+          docker exec analytics-db psql \
+            -U ${{ env.ANALYTICS_DB_USER }} \
+            -d ${{ env.ANALYTICS_DB_NAME }} -c "
             SELECT table_name FROM information_schema.views
             WHERE table_schema = 'public';
           "
 
-      # ── 5. Upload test data to MinIO ───────────────────────────
+      # ── 6. Upload test data to MinIO ─────────────────────────────────────────
       - name: Generate and upload test data to MinIO
         run: |
           cd data-generator
@@ -432,7 +499,12 @@ jobs:
           python3 -c "
           import os
           from minio import Minio
-          client = Minio('localhost:9000', os.environ['MINIO_ROOT_USER'], os.environ['MINIO_ROOT_PASSWORD'], secure=False)
+          client = Minio(
+              'localhost:9000',
+              os.environ['MINIO_ROOT_USER'],
+              os.environ['MINIO_ROOT_PASSWORD'],
+              secure=False,
+          )
           client.fput_object('raw-sales', 'test_flow.csv', 'test_flow.csv')
           objects = [o.object_name for o in client.list_objects('raw-sales')]
           print(f'Files in raw-sales after upload: {objects}')
@@ -440,7 +512,7 @@ jobs:
           print('INGESTION CHECK PASSED: test data uploaded to MinIO')
           "
 
-      # ── 6. Trigger Airflow DAG ──────────────────────────────────
+      # ── 7. Trigger Airflow DAG ───────────────────────────────────────────────
       - name: Unpause and trigger Airflow DAG
         run: |
           docker exec airflow-scheduler airflow dags unpause sales_data_pipeline
@@ -448,12 +520,16 @@ jobs:
           docker exec airflow-scheduler airflow dags trigger sales_data_pipeline
           echo "DAG triggered"
 
-      # ── 7. Wait for DAG run to complete ────────────────────────
+      # ── 8. Wait for DAG run to complete ─────────────────────────────────────
       - name: Wait for DAG run to complete
         run: |
           echo "Polling DAG run status via CLI..."
           for i in $(seq 1 60); do
-            STATE=$(docker exec airflow-scheduler airflow dags list-runs -d sales_data_pipeline -o plain --no-backfill 2>/dev/null | head -5 | grep -oE '(success|failed|running|queued)' | head -1 || echo "unknown")
+            STATE=$(docker exec airflow-scheduler \
+              airflow dags list-runs -d sales_data_pipeline \
+              -o plain --no-backfill 2>/dev/null \
+              | head -5 | grep -oE '(success|failed|running|queued)' \
+              | head -1 || echo "unknown")
             echo "  attempt $i/60 – state: $STATE"
 
             if [ "$STATE" = "success" ]; then
@@ -470,11 +546,14 @@ jobs:
           docker compose logs airflow-scheduler --tail 80
           exit 1
 
-      # ── 8. Verify data landed in PostgreSQL ────────────────────
+      # ── 9. Verify data landed in PostgreSQL ──────────────────────────────────
       - name: Verify data in PostgreSQL
         run: |
           echo "Checking sales table for loaded data..."
-          ROW_COUNT=$(docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -t -c "SELECT COUNT(*) FROM sales;")
+          ROW_COUNT=$(docker exec analytics-db psql \
+            -U ${{ env.ANALYTICS_DB_USER }} \
+            -d ${{ env.ANALYTICS_DB_NAME }} \
+            -t -c "SELECT COUNT(*) FROM sales;")
           ROW_COUNT=$(echo "$ROW_COUNT" | xargs)
           echo "Rows in sales table: $ROW_COUNT"
 
@@ -487,38 +566,50 @@ jobs:
 
           echo ""
           echo "=== Sample data ==="
-          docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -c \
+          docker exec analytics-db psql \
+            -U ${{ env.ANALYTICS_DB_USER }} \
+            -d ${{ env.ANALYTICS_DB_NAME }} -c \
             "SELECT order_id, product_name, quantity, unit_price, total_amount, country FROM sales LIMIT 5;"
 
           echo ""
           echo "=== Daily sales summary view ==="
-          docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -c \
+          docker exec analytics-db psql \
+            -U ${{ env.ANALYTICS_DB_USER }} \
+            -d ${{ env.ANALYTICS_DB_NAME }} -c \
             "SELECT * FROM daily_sales_summary LIMIT 5;"
 
           echo ""
           echo "=== Product performance view ==="
-          docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -c \
+          docker exec analytics-db psql \
+            -U ${{ env.ANALYTICS_DB_USER }} \
+            -d ${{ env.ANALYTICS_DB_NAME }} -c \
             "SELECT * FROM product_performance LIMIT 5;"
 
           echo ""
           echo "=== Country analysis view ==="
-          docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -c \
+          docker exec analytics-db psql \
+            -U ${{ env.ANALYTICS_DB_USER }} \
+            -d ${{ env.ANALYTICS_DB_NAME }} -c \
             "SELECT * FROM country_analysis LIMIT 5;"
 
-      # ── 9. Verify file archived in MinIO ───────────────────────
+      # ── 10. Verify file archived in MinIO ────────────────────────────────────
       - name: Verify MinIO archival
         run: |
           python3 -c "
           import os
           from minio import Minio
-          client = Minio('localhost:9000', os.environ['MINIO_ROOT_USER'], os.environ['MINIO_ROOT_PASSWORD'], secure=False)
-
+          client = Minio(
+              'localhost:9000',
+              os.environ['MINIO_ROOT_USER'],
+              os.environ['MINIO_ROOT_PASSWORD'],
+              secure=False,
+          )
           raw_files = [o.object_name for o in client.list_objects('raw-sales')]
-          archive_files = [o.object_name for o in client.list_objects('archive', recursive=True)]
-
+          archive_files = [
+              o.object_name for o in client.list_objects('archive', recursive=True)
+          ]
           print(f'Files remaining in raw-sales: {raw_files}')
           print(f'Files in archive: {archive_files}')
-
           if 'test_flow.csv' not in raw_files and len(archive_files) > 0:
               print('ARCHIVE CHECK PASSED: file moved from raw-sales to archive')
           elif 'test_flow.csv' in raw_files:
@@ -527,7 +618,7 @@ jobs:
               print('Archive check inconclusive')
           "
 
-      # ── 10. Verify Metabase can query the data ──────────────────
+      # ── 11. Verify Metabase can query the data ───────────────────────────────
       - name: Verify Metabase visualization layer
         run: |
           echo "Setting up Metabase admin account..."
@@ -671,7 +762,7 @@ jobs:
               sys.exit(1)
           "
 
-      # ── 11. Print full data flow summary ────────────────────────
+      # ── 12. Print full data flow summary ─────────────────────────────────────
       - name: Data flow validation summary
         if: always()
         run: |
@@ -687,12 +778,18 @@ jobs:
           echo "  Full pipeline: MinIO → Airflow → PostgreSQL → Metabase"
           echo "============================================="
 
-      # ── 12. Collect debug logs on failure ───────────────────────
+      # ── 13. Collect debug logs on failure ────────────────────────────────────
       - name: Collect debug logs
         if: failure()
         run: |
           echo "=== Docker container status ==="
           docker compose ps -a
+          echo ""
+          echo "=== metabase-db logs ==="
+          docker compose logs metabase-db --tail 50
+          echo ""
+          echo "=== analytics-db logs ==="
+          docker compose logs analytics-db --tail 50
           echo ""
           echo "=== Airflow scheduler logs ==="
           docker compose logs airflow-scheduler --tail 100
@@ -702,14 +799,11 @@ jobs:
           echo ""
           echo "=== Metabase logs ==="
           docker compose logs metabase --tail 50
-          echo ""
-          echo "=== Analytics DB logs ==="
-          docker compose logs analytics-db --tail 30
 
       - name: Stop services
         if: always()
         run: |
-          docker compose down -v
+          docker compose down -v --remove-orphans
 
   cd-deploy-test:
     name: CD - Deploy to Test Environment
@@ -721,9 +815,39 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # ── 1. Write .env so docker compose receives all credentials ───────────
+      - name: Create .env file for docker compose
+        run: |
+          cat > .env << EOF
+          MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}
+          MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}
+          MINIO_ENDPOINT=minio:9000
+          AIRFLOW_DB_USER=${{ secrets.AIRFLOW_DB_USER }}
+          AIRFLOW_DB_PASSWORD=${{ secrets.AIRFLOW_DB_PASSWORD }}
+          AIRFLOW_DB_NAME=airflow
+          AIRFLOW_FERNET_KEY=${{ secrets.AIRFLOW_FERNET_KEY }}
+          AIRFLOW_SECRET_KEY=${{ secrets.AIRFLOW_SECRET_KEY }}
+          AIRFLOW_ADMIN_USER=${{ secrets.AIRFLOW_ADMIN_USER }}
+          AIRFLOW_ADMIN_PASSWORD=${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
+          ANALYTICS_DB_HOST=analytics-db
+          ANALYTICS_DB_PORT=5432
+          ANALYTICS_DB_NAME=analytics
+          ANALYTICS_DB_USER=${{ secrets.ANALYTICS_DB_USER }}
+          ANALYTICS_DB_PASSWORD=${{ secrets.ANALYTICS_DB_PASSWORD }}
+          METABASE_DB_HOST=metabase-db
+          METABASE_DB_PORT=5432
+          METABASE_DB_NAME=metabase
+          METABASE_DB_USER=${{ secrets.METABASE_DB_USER }}
+          METABASE_DB_PASSWORD=${{ secrets.METABASE_DB_PASSWORD }}
+          EOF
+          echo ".env file created"
+
       - name: Deploy containers to test environment
         run: |
           echo "Deploying to test environment..."
+          docker compose down -v --remove-orphans 2>/dev/null || true
+          docker volume prune -f
+
           mkdir -p airflow/logs/scheduler airflow/logs/dag_processor_manager airflow/logs/pipeline
           mkdir -p airflow/plugins airflow/config
           chmod -R 777 airflow/logs
@@ -746,9 +870,10 @@ jobs:
           }
 
           echo "Running health checks..."
-          wait_for "MinIO"      "curl -sf http://localhost:9000/minio/health/live" 36
-          wait_for "Airflow DB" "docker exec airflow-db pg_isready -U ${{ env.AIRFLOW_DB_USER }}" 36
-          wait_for "PostgreSQL" "docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}" 36
+          wait_for "MinIO"       "curl -sf http://localhost:9000/minio/health/live" 60
+          wait_for "Airflow DB"  "docker exec airflow-db pg_isready -U ${{ env.AIRFLOW_DB_USER }}" 60
+          wait_for "PostgreSQL"  "docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}" 60
+          wait_for "Metabase DB" "docker exec metabase-db pg_isready -U ${{ env.METABASE_DB_USER }}" 60
 
           echo "Waiting for airflow-init..."
           for i in $(seq 1 60); do
@@ -800,7 +925,12 @@ jobs:
           python3 -c "
           import os
           from minio import Minio
-          client = Minio('localhost:9000', os.environ['MINIO_ROOT_USER'], os.environ['MINIO_ROOT_PASSWORD'], secure=False)
+          client = Minio(
+              'localhost:9000',
+              os.environ['MINIO_ROOT_USER'],
+              os.environ['MINIO_ROOT_PASSWORD'],
+              secure=False,
+          )
           client.fput_object('raw-sales', 'smoke_test.csv', 'smoke_test.csv')
           print('Smoke test data uploaded')
           "
@@ -811,7 +941,11 @@ jobs:
           echo "Smoke test DAG triggered"
 
           for i in $(seq 1 40); do
-            STATE=$(docker exec airflow-scheduler airflow dags list-runs -d sales_data_pipeline -o plain --no-backfill 2>/dev/null | head -5 | grep -oE '(success|failed|running|queued)' | head -1 || echo "unknown")
+            STATE=$(docker exec airflow-scheduler \
+              airflow dags list-runs -d sales_data_pipeline \
+              -o plain --no-backfill 2>/dev/null \
+              | head -5 | grep -oE '(success|failed|running|queued)' \
+              | head -1 || echo "unknown")
             if [ "$STATE" = "success" ]; then
               echo "Smoke test DAG completed successfully"
               break
@@ -821,7 +955,10 @@ jobs:
             sleep 10
           done
 
-          ROW_COUNT=$(docker exec analytics-db psql -U ${{ env.ANALYTICS_DB_USER }} -d ${{ env.ANALYTICS_DB_NAME }} -t -c "SELECT COUNT(*) FROM sales;" | xargs)
+          ROW_COUNT=$(docker exec analytics-db psql \
+            -U ${{ env.ANALYTICS_DB_USER }} \
+            -d ${{ env.ANALYTICS_DB_NAME }} \
+            -t -c "SELECT COUNT(*) FROM sales;" | xargs)
           echo "Rows in sales table: $ROW_COUNT"
           if [ "$ROW_COUNT" -gt 0 ]; then
             echo "SMOKE TEST PASSED: deployment is functional"
@@ -841,7 +978,7 @@ jobs:
       - name: Stop test environment
         if: always()
         run: |
-          docker compose down -v
+          docker compose down -v --remove-orphans
 
   all-tests-pass:
     name: All Tests Pass
