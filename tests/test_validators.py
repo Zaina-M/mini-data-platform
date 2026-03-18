@@ -10,10 +10,10 @@ from datetime import datetime
 
 import pandas as pd
 
+from validation.validators import DataValidator, ValidationResult, ValidationStatus
+
 # Add dags directory to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "airflow", "dags"))
-
-from validation.validators import DataValidator, ValidationResult, ValidationStatus
 
 
 class TestValidationResult:
