@@ -62,7 +62,7 @@ jobs:
         run: |
           flake8 airflow/dags/ data-generator/ tests/ \
             --max-line-length=100 \
-            --ignore=E501,W503,E402
+            --ignore=E501,W503,E402,E121
 
       - name: Check formatting with black
         run: |
