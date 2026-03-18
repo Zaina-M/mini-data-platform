@@ -254,9 +254,7 @@ class PostgresService:
         """Return (min, max) order dates from the sales table."""
         try:
             with postgres_connection() as (conn, cursor):
-                cursor.execute(
-                    f"SELECT MIN(order_date), MAX(order_date) FROM {self.SALES_TABLE}"
-                )
+                cursor.execute(f"SELECT MIN(order_date), MAX(order_date) FROM {self.SALES_TABLE}")
                 return cursor.fetchone()
         except Exception as e:
             logger.error(f"Error getting date range: {e}")
@@ -355,4 +353,3 @@ class PostgresService:
         except Exception as e:
             logger.error(f"PostgreSQL health check failed: {e}")
             return False
-        
