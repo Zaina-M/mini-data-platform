@@ -168,7 +168,7 @@
       - name: Stop test environment
         if: always()
         run: docker compose down -v --remove-orphans
-
+        
   all-tests-pass:
     name: All Tests Pass
     runs-on: ubuntu-latest
