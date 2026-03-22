@@ -1,0 +1,58 @@
+name: CI - Infrastructure
+
+on:
+  push:
+    paths:
+      - "docker-compose.yml"
+      - "Dockerfile"
+      - "airflow/**"
+      - "sql/**"
+  pull_request:
+    paths:
+      - "docker-compose.yml"
+      - "Dockerfile"
+      - "airflow/**"
+      - "sql/**"
+
+jobs:
+  infra-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Docker validation
+      - name: Validate docker-compose
+        run: docker compose config -q
+
+      - name: Build containers
+        run: docker compose build
+
+      # SQL validation
+      - name: Install sqlfluff
+        run: pip install sqlfluff
+
+      - name: Lint SQL
+        run: sqlfluff lint sql/ --dialect postgres
+
+      # DAG validation
+      - name: Install Airflow
+        run: pip install apache-airflow==2.8.1
+
+      - name: Validate DAGs
+        run: |
+          python -c "
+          from airflow.models import DagBag
+          dag_bag = DagBag('airflow/dags/', include_examples=False)
+          assert not dag_bag.import_errors
+          print('DAGs valid')
+          "
+
+      # Security
+      - name: Install Trivy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y trivy
+
+      - name: Run security scan
+        run: trivy fs --severity CRITICAL,HIGH --exit-code 1 .
