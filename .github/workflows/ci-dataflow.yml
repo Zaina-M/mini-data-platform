@@ -349,7 +349,7 @@ jobs:
 
           if [ -n "$SETUP_TOKEN" ] && [ "$SETUP_TOKEN" != "None" ] && [ "$SETUP_TOKEN" != "null" ]; then
             echo "Running first-time Metabase setup..."
-            SETUP_RESULT=$(curl_json -X POST "$API_BASE/api/setup" \
+            SETUP_RESULT=$(curl -sS -X POST "$API_BASE/api/setup" \
               -H "Content-Type: application/json" \
               -d "{
                 \"token\": \"$SETUP_TOKEN\",
