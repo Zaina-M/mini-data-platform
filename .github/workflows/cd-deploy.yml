@@ -178,4 +178,10 @@
         run: |
           echo "All tests passed successfully!"
           echo "Ready for deployment"
+
+      - name: Show logs on failure
+        if: failure()
+        run: |
+         docker compose ps -a
+         docker compose logs airflow-db --tail 50          
         
