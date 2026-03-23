@@ -21,12 +21,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create .env
-        run: bash scripts/create_env.sh
-
-      - name: Start services
-        run: docker compose up -d --build
-
  
 # ── 1. Write .env — one echo per line, no indentation issues ───────────
       - name: Create .env file for docker compose
