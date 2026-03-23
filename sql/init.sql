@@ -13,7 +13,6 @@ CREATE TABLE IF NOT EXISTS sales (
     country VARCHAR(100) NOT NULL,
     total_amount DECIMAL(12, 2) NOT NULL,
     ingestion_timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-
     CONSTRAINT valid_total CHECK (total_amount = quantity * unit_price)
 );
 
@@ -28,7 +27,6 @@ CREATE INDEX IF NOT EXISTS idx_sales_ingestion ON sales (ingestion_timestamp);
 CREATE INDEX IF NOT EXISTS idx_sales_date_country ON sales (
     order_date, country
 );
-
 -- Create view for daily sales summary
 CREATE OR REPLACE VIEW daily_sales_summary AS
 SELECT
