@@ -267,8 +267,7 @@ def single_run(args):
 
 
 def stream_mode(args):
-    
-    #Continuously generate and upload data until Ctrl+C.
+    # Continuously generate and upload data until Ctrl+C.
     stop_event = False
 
     def handle_signal(signum, frame):
