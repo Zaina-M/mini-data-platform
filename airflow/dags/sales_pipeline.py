@@ -265,8 +265,6 @@ def load_to_postgres(**context) -> Dict[str, Any]:
     """
     Load enriched data into PostgreSQL analytics database.
 
-    Returns:
-        Load statistics dictionary
     """
     with PipelineLogger("load_to_postgres", **context) as log:
         ti = context["ti"]
@@ -314,8 +312,6 @@ def archive_processed_files(**context) -> Dict[str, Any]:
     """
     Move processed files to archive bucket.
 
-    Returns:
-        Archive statistics dictionary
     """
     with PipelineLogger("archive_processed_files", **context) as log:
         ti = context["ti"]
@@ -345,8 +341,6 @@ def generate_summary(**context) -> Dict[str, Any]:
     """
     Generate pipeline execution summary.
 
-    Returns:
-        Summary statistics dictionary
     """
     with PipelineLogger("generate_summary", **context) as log:
         ti = context["ti"]
