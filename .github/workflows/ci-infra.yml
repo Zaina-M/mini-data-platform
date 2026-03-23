@@ -35,24 +35,20 @@ jobs:
       - name: Lint SQL
         run: sqlfluff lint sql/ --dialect postgres
 
-      # DAG validation
-      - name: Install Airflow
-        run: pip install apache-airflow==2.8.1
-
+      # DAG validation — run inside Docker, not on the runner
       - name: Validate DAGs
         run: |
-          python -c "
+          docker compose run --rm airflow-scheduler python -c "
           from airflow.models import DagBag
-          dag_bag = DagBag('airflow/dags/', include_examples=False)
-          assert not dag_bag.import_errors
+          dag_bag = DagBag('dags/', include_examples=False)
+          assert not dag_bag.import_errors, dag_bag.import_errors
           print('DAGs valid')
           "
 
       # Security
       - name: Install Trivy
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y trivy
-
-      - name: Run security scan
-        run: trivy fs --severity CRITICAL,HIGH --exit-code 1 .
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          severity: CRITICAL,HIGH
+          exit-code: 1
