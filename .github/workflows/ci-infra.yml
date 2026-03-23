@@ -21,6 +21,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Create .env so docker-compose has all required variables in CI
+      - name: Create .env for CI
+        run: |
+          cat << EOF > .env
+          POSTGRES_USER=airflow
+          POSTGRES_PASSWORD=airflow
+          POSTGRES_DB=airflow
+          EOF
+
       # Docker validation
       - name: Validate docker-compose
         run: docker compose config -q
@@ -35,6 +44,17 @@ jobs:
       - name: Lint SQL
         run: sqlfluff lint sql/ --dialect postgres
 
+      # Start DB and wait for it to be healthy before DAG validation
+      - name: Start airflow-db
+        run: |
+          docker compose up -d airflow-db
+          timeout 60 bash -c \
+            'until docker compose exec airflow-db pg_isready -U airflow; do sleep 2; done'
+
+      - name: Debug DB logs (on failure)
+        if: failure()
+        run: docker compose logs airflow-db
+
       # DAG validation — run inside Docker, not on the runner
       - name: Validate DAGs
         run: |
@@ -46,9 +66,14 @@ jobs:
           "
 
       # Security
-      - name: Install Trivy
-        uses: aquasecurity/trivy-action@master
+      - name: Scan for vulnerabilities
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: fs
           severity: CRITICAL,HIGH
           exit-code: 1
+
+      # Always clean up, even if a step fails
+      - name: Tear down
+        if: always()
+        run: docker compose down -v
