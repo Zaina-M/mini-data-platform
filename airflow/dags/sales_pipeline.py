@@ -4,11 +4,6 @@ Sales Data Pipeline DAG (Refactored)
 This DAG processes sales CSV files from MinIO, validates and cleans the data
 using Pandera schemas, then loads it into PostgreSQL for analytics.
 
-Architecture:
-- Uses modular service classes for MinIO and PostgreSQL operations
-- Pandera schemas for data validation at each stage
-- File-based logging for production monitoring
-- Separation of concerns between DAG definition and business logic
 """
 
 from datetime import datetime, timedelta
@@ -91,8 +86,6 @@ def validate_schema(**context) -> List[str]:
     """
     Validate CSV schema and structure using Pandera.
 
-    Returns:
-        List of valid file names
     """
     with PipelineLogger("validate_schema", **context) as log:
         ti = context["ti"]
@@ -148,8 +141,6 @@ def clean_data(**context) -> List[Dict[str, Any]]:
     """
     Clean and transform sales data using DataCleaner.
 
-    Returns:
-        List of cleaned data dictionaries
     """
     with PipelineLogger("clean_data", **context) as log:
         ti = context["ti"]
@@ -214,8 +205,6 @@ def compute_totals(**context) -> List[Dict[str, Any]]:
     """
     Compute total_amount and add enrichment fields using DataEnricher.
 
-    Returns:
-        List of enriched data dictionaries
     """
     with PipelineLogger("compute_totals", **context) as log:
         ti = context["ti"]
