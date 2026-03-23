@@ -267,15 +267,8 @@ def single_run(args):
 
 
 def stream_mode(args):
-    """
-    Continuously generate and upload data until Ctrl+C.
-
-    Simulates a real-time data stream:
-    - Generates a batch every --interval seconds
-    - Uploads directly to MinIO
-    - Prints running stats
-    - Gracefully stops on Ctrl+C
-    """
+    
+    #Continuously generate and upload data until Ctrl+C.
     stop_event = False
 
     def handle_signal(signum, frame):
