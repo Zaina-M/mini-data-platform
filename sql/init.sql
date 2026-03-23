@@ -1,5 +1,5 @@
 -- Sales Data Platform - Analytics Database Schema
--- This schema is designed for analytics workloads with proper indexing
+-- This schema is designed for analytics workloads with proper indexing.
 
 -- Create sales table with analytics-optimized structure
 CREATE TABLE IF NOT EXISTS sales (
