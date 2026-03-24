@@ -53,6 +53,9 @@ jobs:
       - name: Lint SQL
         run: bash scripts/ci/infra_sql_lint.sh
 
+      - name: Prepare Airflow mount dirs
+        run: bash scripts/ci/infra_prepare_airflow_dirs.sh
+
       # Start DB and wait for it to be healthy before DAG validation
       - name: Start airflow-db
         run: bash scripts/ci/infra_start_airflow_db.sh
