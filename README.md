@@ -24,7 +24,7 @@ CSV Files --> MinIO --> Airflow --> PostgreSQL --> Metabase
 
 ```mermaid
 flowchart LR
-    subgraph Input
+    subgraph CSV files generator
         A[CSV Files]
     end
     
@@ -33,14 +33,14 @@ flowchart LR
         F[(MinIO\narchive)]
     end
     
-    subgraph Processing
+    subgraph Airflow
         C{{Airflow\nScheduler}}
         D[Validate]
         E[Clean]
         G[Transform]
     end
     
-    subgraph Analytics
+    subgraph Database
         H[(PostgreSQL)]
     end
     
@@ -457,7 +457,7 @@ docker-compose down -v
 
 ### Pipeline Success
 ![alt text](screenshots/image-6.png)
-![alt text](screenshots/image-7.png)
+
 
 ## Documentation
 
