@@ -163,6 +163,9 @@ jobs:
 
       # ── 4. Verify MinIO buckets ──────────────────────────────────────────────
       - name: Verify MinIO buckets
+        env:
+          MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+          MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
         run: |
           python3 -c "
           import os
@@ -198,6 +201,9 @@ jobs:
 
       # ── 6. Upload test data to MinIO ─────────────────────────────────────────
       - name: Generate and upload test data to MinIO
+        env:
+          MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+          MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
         run: |
           cd data-generator
           python generate_sales.py --records 50 --error-rate 0.05 --output test_flow.csv
