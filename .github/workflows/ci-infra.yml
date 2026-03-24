@@ -2,6 +2,7 @@ name: CI - Infrastructure
 
 on:
   push:
+    branches: [main]
     paths:
       - "docker-compose.yml"
       - "Dockerfile"
