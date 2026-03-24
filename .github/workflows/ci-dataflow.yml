@@ -436,7 +436,7 @@ jobs:
                 \"details\": {
                   \"host\": \"analytics-db\",
                   \"port\": 5432,
-                  \"dbname\": \"${{ secrets.ANALYTICS_DB_NAME || 'analytics' }}\",
+                  \"dbname\": \"${{ secrets.ANALYTICS_DB_NAME }}\",
                   \"user\": \"${{ secrets.ANALYTICS_DB_USER }}\",
                   \"password\": \"${{ secrets.ANALYTICS_DB_PASSWORD }}\",
                   \"ssl\": false
@@ -471,7 +471,7 @@ jobs:
               \"parameters\": []
             }")
 
-              echo "$QUERY_RESULT" | python3 -c 'import json,sys; result=json.loads(sys.stdin.read() or "{}"); "error" in result and (print("Metabase query error: {}".format(result.get("error"))), sys.exit(1)); rows=result.get("data", {}).get("rows", []); rows or (print("VISUALIZATION CHECK FAILED: no data returned from Metabase"), sys.exit(1)); total_rows,total_revenue,countries=rows[0]; print("  Total rows:    {}".format(total_rows)); print("  Total revenue: {}".format(total_revenue)); print("  Countries:     {}".format(countries)); int(total_rows)>0 and print("VISUALIZATION CHECK PASSED: Metabase can query sales data") or (print("VISUALIZATION CHECK FAILED: Metabase returned 0 rows"), sys.exit(1))'
+              echo "$QUERY_RESULT" | python3 -c 'import json,sys; result=json.loads(sys.stdin.read() or "{}"); "error" in result and (print("Metabase query error: {}".format(result.get("error"))), sys.exit(1)); rows=result.get("data", {}).get("rows", []); rows or (print("VISUALIZATION CHECK FAILED: no data returned from Metabase"), sys.exit(1)); total_rows,total_revenue,countries=rows[0]; print("  Total rows:    {}".format(total_rows)); print("  Total revenue: {}".format(total_revenue)); print("  Countries:     {}".format(countries)); ok=int(total_rows)>0; print("VISUALIZATION CHECK PASSED: Metabase can query sales data" if ok else "VISUALIZATION CHECK FAILED: Metabase returned 0 rows"); sys.exit(0 if ok else 1)'
 
       # ── 12. Data flow summary ────────────────────────────────────────────────
       - name: Data flow validation summary
