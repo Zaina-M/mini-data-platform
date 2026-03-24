@@ -54,10 +54,6 @@ class SalesDataGenerator:
     def __init__(self, num_records=100, error_rate=0.05):
         """
         Initialize generator.
-
-        Args:
-            num_records: Number of records to generate
-            error_rate: Proportion of records with data quality issues (0-1)
         """
         self.num_records = num_records
         self.error_rate = error_rate
