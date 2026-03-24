@@ -89,11 +89,6 @@ def get_logger(name: str) -> logging.Logger:
     """
     Get a logger instance for the specified module.
 
-    Args:
-        name: Name of the module/component
-
-    Returns:
-        Logger instance configured for file output
     """
     # Ensure logging is setup
     parent_logger = logging.getLogger("sales_pipeline")

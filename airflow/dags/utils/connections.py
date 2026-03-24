@@ -60,12 +60,6 @@ def get_minio_client():
     """
     Initialize and return MinIO client.
 
-    Returns:
-        Minio: Configured MinIO client instance
-
-    Raises:
-        ImportError: If minio package is not installed
-        Exception: If connection fails
     """
     from minio import Minio
 
@@ -87,12 +81,6 @@ def get_postgres_connection():
     """
     Create PostgreSQL connection using psycopg2.
 
-    Returns:
-        connection: psycopg2 connection object
-
-    Raises:
-        ImportError: If psycopg2 package is not installed
-        Exception: If connection fails
     """
     import psycopg2
 
@@ -122,12 +110,6 @@ def postgres_connection() -> Generator:
     Context manager for PostgreSQL connections.
     Automatically handles commit/rollback and connection cleanup.
 
-    Usage:
-        with postgres_connection() as (conn, cursor):
-            cursor.execute("SELECT * FROM sales")
-
-    Yields:
-        tuple: (connection, cursor) objects
     """
     conn = None
     cursor = None
