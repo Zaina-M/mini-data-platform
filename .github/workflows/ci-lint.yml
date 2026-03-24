@@ -2,6 +2,7 @@ name: CI - Lint
 
 on:
   push:
+    branches: [main]
     paths:
       - "airflow/dags/**"
       - "data-generator/**"
