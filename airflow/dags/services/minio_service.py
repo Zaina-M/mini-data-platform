@@ -113,8 +113,6 @@ class MinIOService:
         """
         Detect new CSV files in the raw-sales bucket.
 
-        Returns:
-            List of file names
         """
         files = self.list_csv_files(self.RAW_BUCKET)
         file_names = [f.object_name for f in files]
@@ -132,12 +130,6 @@ class MinIOService:
         """
         Download a CSV file and return as DataFrame.
 
-        Args:
-            file_name: Name of the file to download
-            bucket: Bucket name (defaults to RAW_BUCKET)
-
-        Returns:
-            Tuple of (DataFrame, metadata dict)
         """
         bucket = bucket or self.RAW_BUCKET
 
@@ -172,13 +164,6 @@ class MinIOService:
         """
         Upload a DataFrame as CSV to MinIO.
 
-        Args:
-            df: DataFrame to upload
-            file_name: Target file name
-            bucket: Bucket name (defaults to PROCESSED_BUCKET)
-
-        Returns:
-            Object name in MinIO
         """
         bucket = bucket or self.PROCESSED_BUCKET
 
