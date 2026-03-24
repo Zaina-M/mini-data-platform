@@ -79,9 +79,9 @@ jobs:
 
           echo "Waiting for infrastructure..."
           wait_for "MinIO"        "curl -sf http://localhost:9000/minio/health/live" 60
-          wait_for "Airflow DB"   "docker exec airflow-db pg_isready -U ${{ env.AIRFLOW_DB_USER }}" 60
-          wait_for "Analytics DB" "docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}" 60
-          wait_for "Metabase DB"  "docker exec metabase-db pg_isready -U ${{ env.METABASE_DB_USER }}" 60
+          wait_for "Airflow DB"   "docker exec airflow-db pg_isready -U ${{ secrets.AIRFLOW_DB_USER }}" 60
+          wait_for "Analytics DB" "docker exec analytics-db pg_isready -U ${{ secrets.ANALYTICS_DB_USER }}" 60
+          wait_for "Metabase DB"  "docker exec metabase-db pg_isready -U ${{ secrets.METABASE_DB_USER }}" 60
 
           echo "Waiting for airflow-init to complete..."
           for i in $(seq 1 60); do
