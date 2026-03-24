@@ -26,13 +26,7 @@ jobs:
           cache: 'pip'
 
       - name: Install tools
-        run: pip install flake8 black isort mypy
+        run: bash scripts/ci/install_lint_tools.sh
 
-      - name: Run flake8
-        run: flake8 airflow/dags/ data-generator/ tests/
-
-      - name: Check formatting
-        run: black --check airflow/dags/ data-generator/ tests/
-
-      - name: Check imports
-        run: isort --check-only airflow/dags/ data-generator/ tests/
+      - name: Run lint suite
+        run: bash scripts/ci/run_lint_suite.sh

@@ -10,9 +10,16 @@ jobs:
     timeout-minutes: 20
     env:
       AIRFLOW_DB_USER: ${{ secrets.AIRFLOW_DB_USER }}
+      AIRFLOW_DB_PASSWORD: ${{ secrets.AIRFLOW_DB_PASSWORD }}
+      AIRFLOW_FERNET_KEY: ${{ secrets.AIRFLOW_FERNET_KEY }}
+      AIRFLOW_SECRET_KEY: ${{ secrets.AIRFLOW_SECRET_KEY }}
+      AIRFLOW_ADMIN_USER: ${{ secrets.AIRFLOW_ADMIN_USER }}
+      AIRFLOW_ADMIN_PASSWORD: ${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
       ANALYTICS_DB_USER: ${{ secrets.ANALYTICS_DB_USER }}
       ANALYTICS_DB_NAME: ${{ secrets.ANALYTICS_DB_NAME }}
+      ANALYTICS_DB_PASSWORD: ${{ secrets.ANALYTICS_DB_PASSWORD }}
       METABASE_DB_USER: ${{ secrets.METABASE_DB_USER }}
+      METABASE_DB_PASSWORD: ${{ secrets.METABASE_DB_PASSWORD }}
       MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
       MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
     
@@ -22,151 +29,42 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Create .env file for docker compose
-        run: |
-          echo "MINIO_ROOT_USER=${{ secrets.MINIO_ROOT_USER }}" > .env
-          echo "MINIO_ROOT_PASSWORD=${{ secrets.MINIO_ROOT_PASSWORD }}" >> .env
-          echo "MINIO_ENDPOINT=minio:9000" >> .env
-          echo "AIRFLOW_DB_USER=${{ secrets.AIRFLOW_DB_USER }}" >> .env
-          echo "AIRFLOW_DB_PASSWORD=${{ secrets.AIRFLOW_DB_PASSWORD }}" >> .env
-          echo "AIRFLOW_DB_NAME=airflow" >> .env
-          echo "AIRFLOW_FERNET_KEY=${{ secrets.AIRFLOW_FERNET_KEY }}" >> .env
-          echo "AIRFLOW_SECRET_KEY=${{ secrets.AIRFLOW_SECRET_KEY }}" >> .env
-          echo "AIRFLOW_ADMIN_USER=${{ secrets.AIRFLOW_ADMIN_USER }}" >> .env
-          echo "AIRFLOW_ADMIN_PASSWORD=${{ secrets.AIRFLOW_ADMIN_PASSWORD }}" >> .env
-          echo "ANALYTICS_DB_HOST=analytics-db" >> .env
-          echo "ANALYTICS_DB_PORT=5432" >> .env
-          echo "ANALYTICS_DB_NAME=analytics" >> .env
-          echo "ANALYTICS_DB_USER=${{ secrets.ANALYTICS_DB_USER }}" >> .env
-          echo "ANALYTICS_DB_PASSWORD=${{ secrets.ANALYTICS_DB_PASSWORD }}" >> .env
-          echo "METABASE_DB_HOST=metabase-db" >> .env
-          echo "METABASE_DB_PORT=5432" >> .env
-          echo "METABASE_DB_NAME=metabase" >> .env
-          echo "METABASE_DB_USER=${{ secrets.METABASE_DB_USER }}" >> .env
-          echo "METABASE_DB_PASSWORD=${{ secrets.METABASE_DB_PASSWORD }}" >> .env
-          echo ".env written — verifying (keys only):"
-          cut -d= -f1 .env
+        run: bash scripts/ci/write_compose_env.sh
 
       - name: Deploy containers to test environment
         run: |
-          docker compose down -v --remove-orphans 2>/dev/null || true
-          docker volume prune -f
-
-          mkdir -p airflow/logs/scheduler airflow/logs/dag_processor_manager airflow/logs/pipeline
-          mkdir -p airflow/plugins airflow/config
-          chmod -R 777 airflow/logs
-
-          docker compose up -d --build
+          bash scripts/ci/bootstrap_compose_stack.sh
           echo "All containers deployed"
 
       - name: Wait for services to be healthy
         run: |
-          wait_for() {
-            local name="$1" cmd="$2" max="$3"
-            for i in $(seq 1 "$max"); do
-              if eval "$cmd" > /dev/null 2>&1; then
-                echo "  ✓ $name: healthy"
-                return 0
-              fi
-              sleep 5
-            done
-            echo "  ✗ $name: FAILED" && return 1
-          }
-
-          wait_for "MinIO"       "curl -sf http://localhost:9000/minio/health/live" 60
-          wait_for "Airflow DB"  "docker exec airflow-db pg_isready -U ${{ env.AIRFLOW_DB_USER }}" 60
-          wait_for "PostgreSQL"  "docker exec analytics-db pg_isready -U ${{ env.ANALYTICS_DB_USER }}" 60
-          wait_for "Metabase DB" "docker exec metabase-db pg_isready -U ${{ env.METABASE_DB_USER }}" 60
-
-          echo "Waiting for airflow-init..."
-          for i in $(seq 1 60); do
-            STATUS=$(docker inspect --format='{{.State.Status}}' airflow-init 2>/dev/null || echo "unknown")
-            if [ "$STATUS" = "exited" ]; then
-              EXIT_CODE=$(docker inspect --format='{{.State.ExitCode}}' airflow-init)
-              if [ "$EXIT_CODE" = "0" ]; then
-                echo "  ✓ airflow-init completed"
-                break
-              else
-                echo "  ✗ airflow-init exited with code $EXIT_CODE"
-                docker logs airflow-init --tail 30
-                exit 1
-              fi
-            fi
-            sleep 5
-          done
-
-          for i in $(seq 1 30); do
-            SCHED_STATUS=$(docker inspect --format='{{.State.Status}}' airflow-scheduler 2>/dev/null || echo "not-found")
-            if [ "$SCHED_STATUS" = "running" ]; then break; fi
-            sleep 5
-          done
-
-          for i in $(seq 1 60); do
-            if docker exec airflow-scheduler airflow db check > /dev/null 2>&1; then
-              echo "  ✓ Airflow Scheduler: healthy"
-              break
-            fi
-            if [ $i -eq 60 ]; then
-              echo "  ✗ Airflow Scheduler: FAILED"
-              docker logs airflow-scheduler --tail 50
-              exit 1
-            fi
-            sleep 5
-          done
-
-          wait_for "Metabase" "curl -sf http://localhost:3000/api/health" 60
+          bash scripts/ci/wait_platform_services.sh
           echo "All services healthy in test environment"
 
       - name: Install Python clients
         run: pip install minio pandas > /dev/null
 
       - name: Smoke test – verify data flow
+        env:
+          MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+          MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
+          ANALYTICS_DB_USER: ${{ secrets.ANALYTICS_DB_USER }}
+          ANALYTICS_DB_NAME: ${{ secrets.ANALYTICS_DB_NAME || 'analytics' }}
+          SUCCESS_MESSAGE: "SMOKE TEST PASSED: deployment is functional"
+          FAILURE_MESSAGE: "SMOKE TEST FAILED"
         run: |
           cd data-generator
           python generate_sales.py --records 20 --error-rate 0.0 --output smoke_test.csv
 
-          python3 -c "
-          import os
-          from minio import Minio
-          client = Minio(
-              'localhost:9000',
-              os.environ['MINIO_ROOT_USER'],
-              os.environ['MINIO_ROOT_PASSWORD'],
-              secure=False,
-          )
-          client.fput_object('raw-sales', 'smoke_test.csv', 'smoke_test.csv')
-          print('Smoke test data uploaded')
-          "
+          python3 ../scripts/ci/upload_minio_object.py \
+            --bucket raw-sales \
+            --object-name smoke_test.csv \
+            --file-path smoke_test.csv
           cd ..
 
-          docker exec airflow-scheduler airflow dags unpause sales_data_pipeline
-          docker exec airflow-scheduler airflow dags trigger sales_data_pipeline
-          echo "Smoke test DAG triggered"
-
-          for i in $(seq 1 40); do
-            STATE=$(docker exec airflow-scheduler \
-              airflow dags list-runs -d sales_data_pipeline \
-              -o plain --no-backfill 2>/dev/null \
-              | head -5 | grep -oE '(success|failed|running|queued)' \
-              | head -1 || echo "unknown")
-            if [ "$STATE" = "success" ]; then
-              echo "Smoke test DAG completed successfully"
-              break
-            elif [ "$STATE" = "failed" ]; then
-              echo "Smoke test DAG failed" && exit 1
-            fi
-            sleep 10
-          done
-
-          ROW_COUNT=$(docker exec analytics-db psql \
-            -U ${{ env.ANALYTICS_DB_USER }} \
-            -d ${{ env.ANALYTICS_DB_NAME }} \
-            -t -c "SELECT COUNT(*) FROM sales;" | xargs)
-          echo "Rows in sales table: $ROW_COUNT"
-          if [ "$ROW_COUNT" -gt 0 ]; then
-            echo "SMOKE TEST PASSED: deployment is functional"
-          else
-            echo "SMOKE TEST FAILED" && exit 1
-          fi
+          bash scripts/ci/trigger_dag.sh sales_data_pipeline
+          bash scripts/ci/wait_for_dag.sh sales_data_pipeline 40 10
+          bash scripts/ci/check_sales_row_count.sh
 
       - name: Show logs on failure
         if: failure()

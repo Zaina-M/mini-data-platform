@@ -24,33 +24,25 @@ jobs:
 
       # Create .env so docker-compose has all required variables in CI
       - name: Create .env for CI
-        run: |
-          cat << EOF > .env
-          POSTGRES_USER=airflow
-          POSTGRES_PASSWORD=airflow
-          POSTGRES_DB=airflow
-          EOF
+        run: bash scripts/ci/infra_create_env.sh
 
       # Docker validation
       - name: Validate docker-compose
-        run: docker compose config -q
+        run: bash scripts/ci/infra_validate_compose.sh
 
       - name: Build containers
-        run: docker compose build
+        run: bash scripts/ci/infra_build_containers.sh
 
       # SQL validation
       - name: Install sqlfluff
-        run: pip install sqlfluff
+        run: bash scripts/ci/infra_install_sqlfluff.sh
 
       - name: Lint SQL
-        run: sqlfluff lint sql/ --dialect postgres
+        run: bash scripts/ci/infra_sql_lint.sh
 
       # Start DB and wait for it to be healthy before DAG validation
       - name: Start airflow-db
-        run: |
-          docker compose up -d airflow-db
-          timeout 60 bash -c \
-            'until docker compose exec airflow-db pg_isready -U airflow; do sleep 2; done'
+        run: bash scripts/ci/infra_start_airflow_db.sh
 
       - name: Debug DB logs (on failure)
         if: failure()
@@ -58,13 +50,7 @@ jobs:
 
       # DAG validation — run inside Docker, not on the runner
       - name: Validate DAGs
-        run: |
-          docker compose run --rm airflow-scheduler python -c "
-          from airflow.models import DagBag
-          dag_bag = DagBag('dags/', include_examples=False)
-          assert not dag_bag.import_errors, dag_bag.import_errors
-          print('DAGs valid')
-          "
+        run: docker compose run --rm airflow-scheduler python scripts/ci/infra_validate_dags.py
 
       # Security
       - name: Scan for vulnerabilities
