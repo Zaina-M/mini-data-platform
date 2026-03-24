@@ -22,7 +22,7 @@ jobs:
     env:
       AIRFLOW_DB_USER: ${{ secrets.AIRFLOW_DB_USER }}
       ANALYTICS_DB_USER: ${{ secrets.ANALYTICS_DB_USER }}
-      ANALYTICS_DB_NAME: ${{ secrets.ANALYTICS_DB_NAME || 'analytics' }}
+      ANALYTICS_DB_NAME: ${{ secrets.ANALYTICS_DB_NAME }}
       METABASE_DB_USER: ${{ secrets.METABASE_DB_USER }}
       MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
       MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
