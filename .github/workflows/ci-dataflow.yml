@@ -187,14 +187,14 @@ jobs:
       - name: Verify PostgreSQL schema
         run: |
           docker exec analytics-db psql \
-            -U ${{ env.ANALYTICS_DB_USER }} \
-            -d ${{ env.ANALYTICS_DB_NAME }} -c "
+            -U ${{ secrets.ANALYTICS_DB_USER }} \
+            -d ${{ secrets.ANALYTICS_DB_NAME || 'analytics' }} -c "
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public' AND table_type = 'BASE TABLE';
           "
           docker exec analytics-db psql \
-            -U ${{ env.ANALYTICS_DB_USER }} \
-            -d ${{ env.ANALYTICS_DB_NAME }} -c "
+            -U ${{ secrets.ANALYTICS_DB_USER }} \
+            -d ${{ secrets.ANALYTICS_DB_NAME || 'analytics' }} -c "
             SELECT table_name FROM information_schema.views
             WHERE table_schema = 'public';
           "
