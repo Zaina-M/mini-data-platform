@@ -115,12 +115,6 @@ class PostgresService:
         Rows that raise an exception are skipped and recorded in
         LoadResult.failed_order_ids; all other rows are committed.
 
-        Args:
-            df:         DataFrame with sales data.
-            batch_size: How often to log progress (rows).
-
-        Returns:
-            LoadResult with operation details.
         """
         start = datetime.now()
         rows_inserted = 0
@@ -190,11 +184,6 @@ class PostgresService:
         causes a failure the entire batch is rolled back by the
         context manager.
 
-        Args:
-            records: List of record dictionaries.
-
-        Returns:
-            LoadResult with operation details.
         """
         if not records:
             return LoadResult(
