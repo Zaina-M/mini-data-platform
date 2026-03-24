@@ -1,5 +1,6 @@
 name: CD Deploy
 on:
+  workflow_dispatch:
   workflow_call:
 
 jobs:
@@ -7,8 +8,15 @@ jobs:
     name: CD - Deploy to Test Environment
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      AIRFLOW_DB_USER: ${{ secrets.AIRFLOW_DB_USER }}
+      ANALYTICS_DB_USER: ${{ secrets.ANALYTICS_DB_USER }}
+      ANALYTICS_DB_NAME: ${{ secrets.ANALYTICS_DB_NAME }}
+      METABASE_DB_USER: ${{ secrets.METABASE_DB_USER }}
+      MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+      MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
     
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'workflow_dispatch' || github.event_name == 'workflow_call')
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
