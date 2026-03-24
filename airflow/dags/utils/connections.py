@@ -137,8 +137,6 @@ def minio_client() -> Generator:
     """
     Context manager for MinIO client.
 
-    Yields:
-        Minio: MinIO client instance
     """
     client = get_minio_client()
     try:
@@ -167,8 +165,6 @@ def check_postgres_health() -> bool:
     """
     Check if PostgreSQL service is accessible.
 
-    Returns:
-        bool: True if PostgreSQL is accessible
     """
     try:
         with postgres_connection() as (conn, cursor):
