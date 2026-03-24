@@ -72,11 +72,6 @@ class DataEnricher:
         """
         Execute full enrichment pipeline on DataFrame.
 
-        Args:
-            df: Input DataFrame (already cleaned)
-
-        Returns:
-            Tuple of (enriched DataFrame, EnrichmentResult)
         """
         start_time = datetime.now()
         fields_added = []
@@ -190,12 +185,6 @@ class DataEnricher:
         """
         Compute aggregate statistics grouped by a column.
 
-        Args:
-            df: Input DataFrame
-            by: Column to group by
-
-        Returns:
-            Aggregated DataFrame
         """
         if by not in df.columns:
             logger.error(f"Column '{by}' not found in DataFrame")

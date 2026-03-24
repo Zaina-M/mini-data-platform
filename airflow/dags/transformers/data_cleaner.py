@@ -101,11 +101,6 @@ class DataCleaner:
         """
         Execute full cleaning pipeline on DataFrame.
 
-        Args:
-            df: Input DataFrame
-
-        Returns:
-            Tuple of (cleaned DataFrame, CleaningResult)
         """
         start_time = datetime.now()
         original_count = len(df)
