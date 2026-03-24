@@ -19,6 +19,13 @@ jobs:
   data-flow:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      AIRFLOW_DB_USER: ${{ secrets.AIRFLOW_DB_USER }}
+      ANALYTICS_DB_USER: ${{ secrets.ANALYTICS_DB_USER }}
+      ANALYTICS_DB_NAME: ${{ secrets.ANALYTICS_DB_NAME || 'analytics' }}
+      METABASE_DB_USER: ${{ secrets.METABASE_DB_USER }}
+      MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+      MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
 
     steps:
       - uses: actions/checkout@v4
@@ -261,8 +268,8 @@ jobs:
       - name: Verify data in PostgreSQL
         run: |
           ROW_COUNT=$(docker exec analytics-db psql \
-            -U ${{ env.ANALYTICS_DB_USER }} \
-            -d ${{ env.ANALYTICS_DB_NAME }} \
+            -U ${{ secrets.ANALYTICS_DB_USER }} \
+            -d ${{ secrets.ANALYTICS_DB_NAME || 'analytics' }} \
             -t -c "SELECT COUNT(*) FROM sales;")
           ROW_COUNT=$(echo "$ROW_COUNT" | xargs)
           echo "Rows in sales table: $ROW_COUNT"
@@ -276,26 +283,26 @@ jobs:
 
           echo "=== Sample data ==="
           docker exec analytics-db psql \
-            -U ${{ env.ANALYTICS_DB_USER }} \
-            -d ${{ env.ANALYTICS_DB_NAME }} -c \
+            -U ${{ secrets.ANALYTICS_DB_USER }} \
+            -d ${{ secrets.ANALYTICS_DB_NAME || 'analytics' }} -c \
             "SELECT order_id, product_name, quantity, unit_price, total_amount, country FROM sales LIMIT 5;"
 
           echo "=== Daily sales summary ==="
           docker exec analytics-db psql \
-            -U ${{ env.ANALYTICS_DB_USER }} \
-            -d ${{ env.ANALYTICS_DB_NAME }} -c \
+            -U ${{ secrets.ANALYTICS_DB_USER }} \
+            -d ${{ secrets.ANALYTICS_DB_NAME  }} -c \
             "SELECT * FROM daily_sales_summary LIMIT 5;"
 
           echo "=== Product performance ==="
           docker exec analytics-db psql \
-            -U ${{ env.ANALYTICS_DB_USER }} \
-            -d ${{ env.ANALYTICS_DB_NAME }} -c \
+            -U ${{ secrets.ANALYTICS_DB_USER }} \
+            -d ${{ secrets.ANALYTICS_DB_NAME  }} -c \
             "SELECT * FROM product_performance LIMIT 5;"
 
           echo "=== Country analysis ==="
           docker exec analytics-db psql \
-            -U ${{ env.ANALYTICS_DB_USER }} \
-            -d ${{ env.ANALYTICS_DB_NAME }} -c \
+            -U ${{ secrets.ANALYTICS_DB_USER }} \
+            -d ${{ secrets.ANALYTICS_DB_NAME  }} -c \
             "SELECT * FROM country_analysis LIMIT 5;"
 
       # ── 10. Verify MinIO archival ─────────────────────────────────────────────
@@ -368,7 +375,7 @@ jobs:
                   \"first_name\": \"CI\",
                   \"last_name\": \"Test\",
                   \"email\": \"$METABASE_USER_EMAIL\",
-                  \"password\": \"${{ secrets.METABASE_ADMIN_PASSWORD }}\"
+                  \"password\": \"${{ secrets.METABASE_DB_PASSWORD }}\"
                 },
                 \"database\": {
                   \"engine\": \"postgres\",
@@ -376,8 +383,8 @@ jobs:
                   \"details\": {
                     \"host\": \"analytics-db\",
                     \"port\": 5432,
-                    \"dbname\": \"${{ env.ANALYTICS_DB_NAME }}\",
-                    \"user\": \"${{ env.ANALYTICS_DB_USER }}\",
+                    \"dbname\": \"${{ secrets.ANALYTICS_DB_NAME  }}\",
+                    \"user\": \"${{ secrets.ANALYTICS_DB_USER }}\",
                     \"password\": \"${{ secrets.ANALYTICS_DB_PASSWORD }}\"
                   }
                 },
@@ -408,7 +415,7 @@ jobs:
           for i in $(seq 1 30); do
             SESSION_RESULT=$(curl_json -X POST "$API_BASE/api/session" \
               -H "Content-Type: application/json" \
-              -d "{\"username\": \"$METABASE_USER_EMAIL\", \"password\": \"${{ secrets.METABASE_ADMIN_PASSWORD }}\"}" 2>/dev/null || true)
+              -d "{\"username\": \"$METABASE_USER_EMAIL\", \"password\": \"${{ secrets.METABASE_DB_PASSWORD }}\"}" 2>/dev/null || true)
 
             SESSION_TOKEN=$(echo "$SESSION_RESULT" | python3 -c "
             import json, sys
@@ -460,8 +467,8 @@ jobs:
                 \"details\": {
                   \"host\": \"analytics-db\",
                   \"port\": 5432,
-                  \"dbname\": \"${{ env.ANALYTICS_DB_NAME }}\",
-                  \"user\": \"${{ env.ANALYTICS_DB_USER }}\",
+                  \"dbname\": \"${{ secrets.ANALYTICS_DB_NAME || 'analytics' }}\",
+                  \"user\": \"${{ secrets.ANALYTICS_DB_USER }}\",
                   \"password\": \"${{ secrets.ANALYTICS_DB_PASSWORD }}\",
                   \"ssl\": false
                 }
