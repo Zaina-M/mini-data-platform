@@ -24,6 +24,19 @@ jobs:
 
       # Create .env so docker-compose has all required variables in CI
       - name: Create .env for CI
+        env:
+          MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+          MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
+          AIRFLOW_DB_USER: ${{ secrets.AIRFLOW_DB_USER }}
+          AIRFLOW_DB_PASSWORD: ${{ secrets.AIRFLOW_DB_PASSWORD }}
+          AIRFLOW_FERNET_KEY: ${{ secrets.AIRFLOW_FERNET_KEY }}
+          AIRFLOW_SECRET_KEY: ${{ secrets.AIRFLOW_SECRET_KEY }}
+          AIRFLOW_ADMIN_USER: ${{ secrets.AIRFLOW_ADMIN_USER }}
+          AIRFLOW_ADMIN_PASSWORD: ${{ secrets.AIRFLOW_ADMIN_PASSWORD }}
+          ANALYTICS_DB_USER: ${{ secrets.ANALYTICS_DB_USER }}
+          ANALYTICS_DB_PASSWORD: ${{ secrets.ANALYTICS_DB_PASSWORD }}
+          METABASE_DB_USER: ${{ secrets.METABASE_DB_USER }}
+          METABASE_DB_PASSWORD: ${{ secrets.METABASE_DB_PASSWORD }}
         run: bash scripts/ci/infra_create_env.sh
 
       # Docker validation
