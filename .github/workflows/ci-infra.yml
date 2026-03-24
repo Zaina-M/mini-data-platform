@@ -66,7 +66,7 @@ jobs:
 
       # DAG validation — run inside Docker, not on the runner
       - name: Validate DAGs
-        run: docker compose run --rm airflow-scheduler python scripts/ci/infra_validate_dags.py
+        run: docker compose run --rm -v "$PWD/scripts/ci:/opt/airflow/scripts/ci" airflow-scheduler python /opt/airflow/scripts/ci/infra_validate_dags.py
 
       # Security
       - name: Scan for vulnerabilities
