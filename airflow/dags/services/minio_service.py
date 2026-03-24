@@ -78,11 +78,6 @@ class MinIOService:
         """
         List all CSV files in a bucket.
 
-        Args:
-            bucket: Bucket name (defaults to RAW_BUCKET)
-
-        Returns:
-            List of MinIOFile objects for CSV files
         """
         bucket = bucket or self.RAW_BUCKET
 
@@ -191,13 +186,6 @@ class MinIOService:
         """
         Archive a file by moving it to the archive bucket.
 
-        Args:
-            file_name: Name of the file to archive
-            source_bucket: Source bucket (defaults to RAW_BUCKET)
-            delete_source: Whether to delete the source file
-
-        Returns:
-            Archive path
         """
         source_bucket = source_bucket or self.RAW_BUCKET
 
@@ -231,13 +219,6 @@ class MinIOService:
         """
         Archive multiple files.
 
-        Args:
-            file_names: List of file names to archive
-            source_bucket: Source bucket
-            delete_source: Whether to delete source files
-
-        Returns:
-            List of archive paths
         """
         archived = []
 
@@ -256,12 +237,6 @@ class MinIOService:
         """
         Get information about a specific file.
 
-        Args:
-            file_name: Name of the file
-            bucket: Bucket name
-
-        Returns:
-            MinIOFile object or None if not found
         """
         bucket = bucket or self.RAW_BUCKET
 
