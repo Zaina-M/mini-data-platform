@@ -137,10 +137,6 @@ def minio_client() -> Generator:
     """
     Context manager for MinIO client.
 
-    Usage:
-        with minio_client() as client:
-            objects = client.list_objects("bucket")
-
     Yields:
         Minio: MinIO client instance
     """
@@ -156,8 +152,6 @@ def check_minio_health() -> bool:
     """
     Check if MinIO service is accessible.
 
-    Returns:
-        bool: True if MinIO is accessible
     """
     try:
         client = get_minio_client()
