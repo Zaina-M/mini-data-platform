@@ -358,12 +358,7 @@ jobs:
           fi
 
           echo "Setting up Metabase admin account..."
-          SETUP_TOKEN=$(echo "$PROPS" | python3 -c "
-          import sys, json
-          props = json.load(sys.stdin)
-          token = props.get('setup-token')
-          print(token if token else '')
-          " 2>/dev/null || true)
+          SETUP_TOKEN=$(echo "$PROPS" | python3 -c 'import json,sys; props=json.loads(sys.stdin.read() or "{}"); token=props.get("setup-token") if isinstance(props, dict) else ""; print(token if token else "")' 2>/dev/null || true)
 
           if [ -n "$SETUP_TOKEN" ] && [ "$SETUP_TOKEN" != "None" ] && [ "$SETUP_TOKEN" != "null" ]; then
             echo "Running first-time Metabase setup..."
@@ -394,18 +389,7 @@ jobs:
                 }
               }")
 
-            echo "$SETUP_RESULT" | python3 -c "
-            import json, sys
-            result = json.load(sys.stdin)
-            if result.get('status') == 'ok' or result.get('id'):
-                print('Metabase setup complete')
-                sys.exit(0)
-            if 'errors' in result:
-                print(f'Metabase setup validation errors: {result[\"errors\"]}')
-            if 'error' in result:
-                print(f'Metabase setup error: {result[\"error\"]}')
-            sys.exit(1)
-            "
+            echo "$SETUP_RESULT" | python3 -c 'import json,sys; result=json.loads(sys.stdin.read() or "{}"); ok=(result.get("status")=="ok" or bool(result.get("id"))); ok and print("Metabase setup complete"); (not ok and "errors" in result) and print("Metabase setup validation errors: {}".format(result.get("errors"))); (not ok and "error" in result) and print("Metabase setup error: {}".format(result.get("error"))); sys.exit(0 if ok else 1)'
           else
             echo "Metabase already set up"
           fi
@@ -417,15 +401,7 @@ jobs:
               -H "Content-Type: application/json" \
               -d "{\"username\": \"$METABASE_USER_EMAIL\", \"password\": \"${{ secrets.METABASE_DB_PASSWORD }}\"}" 2>/dev/null || true)
 
-            SESSION_TOKEN=$(echo "$SESSION_RESULT" | python3 -c "
-            import json, sys
-            try:
-                payload = json.load(sys.stdin)
-            except Exception:
-                print('')
-                sys.exit(0)
-            print(payload.get('id', ''))
-            " 2>/dev/null || true)
+            SESSION_TOKEN=$(echo "$SESSION_RESULT" | python3 -c 'import json,sys; payload=json.loads(sys.stdin.read() or "{}"); print(payload.get("id", "") if isinstance(payload, dict) else "")' 2>/dev/null || true)
 
             if [ -n "$SESSION_TOKEN" ]; then
               break
@@ -447,14 +423,7 @@ jobs:
           DATABASES_JSON=$(curl_json "$API_BASE/api/database" \
             -H "X-Metabase-Session: $SESSION_TOKEN")
 
-          HAS_ANALYTICS_DB=$(echo "$DATABASES_JSON" | python3 -c "
-          import json, sys
-          raw = json.load(sys.stdin)
-          dbs = raw if isinstance(raw, list) else raw.get('data', raw.get('databases', []))
-          if isinstance(dbs, dict):
-              dbs = [dbs]
-          print('yes' if any(d.get('engine') == 'postgres' and d.get('name') == 'Analytics' for d in dbs) else 'no')
-          ")
+          HAS_ANALYTICS_DB=$(echo "$DATABASES_JSON" | python3 -c 'import json,sys; raw=json.loads(sys.stdin.read() or "[]"); dbs=raw if isinstance(raw, list) else raw.get("data", raw.get("databases", [])); dbs=[dbs] if isinstance(dbs, dict) else dbs; print("yes" if any(isinstance(d, dict) and d.get("engine")=="postgres" and d.get("name")=="Analytics" for d in dbs) else "no")')
 
           if [ "$HAS_ANALYTICS_DB" != "yes" ]; then
             echo "Adding analytics database to Metabase..."
@@ -482,18 +451,7 @@ jobs:
           sleep 20
 
           DB_ID=$(curl_json "$API_BASE/api/database" \
-            -H "X-Metabase-Session: $SESSION_TOKEN" | python3 -c "
-          import json, sys
-          raw = json.load(sys.stdin)
-          dbs = raw if isinstance(raw, list) else raw.get('data', raw.get('databases', []))
-          if isinstance(dbs, dict):
-              dbs = [dbs]
-          for db in dbs:
-              if db.get('engine') == 'postgres' and db.get('name') == 'Analytics':
-                  print(db['id'])
-                  sys.exit(0)
-          print('')
-          ")
+            -H "X-Metabase-Session: $SESSION_TOKEN" | python3 -c 'import json,sys; raw=json.loads(sys.stdin.read() or "[]"); dbs=raw if isinstance(raw, list) else raw.get("data", raw.get("databases", [])); dbs=[dbs] if isinstance(dbs, dict) else dbs; print(next((str(d.get("id", "")) for d in dbs if isinstance(d, dict) and d.get("engine")=="postgres" and d.get("name")=="Analytics"), ""))')
 
           if [ -z "$DB_ID" ]; then
             echo "Failed to resolve Analytics database ID in Metabase"
@@ -513,30 +471,7 @@ jobs:
               \"parameters\": []
             }")
 
-          echo "$QUERY_RESULT" | python3 -c "
-          import json, sys
-          try:
-              result = json.load(sys.stdin)
-          except json.JSONDecodeError as e:
-              print(f'Failed to parse Metabase response: {e}')
-              sys.exit(1)
-          if 'error' in result:
-              print(f'Metabase query error: {result[\"error\"]}')
-              sys.exit(1)
-          rows = result.get('data', {}).get('rows', [])
-          if not rows:
-              print('VISUALIZATION CHECK FAILED: no data returned from Metabase')
-              sys.exit(1)
-          total_rows, total_revenue, countries = rows[0]
-          print(f'  Total rows:    {total_rows}')
-          print(f'  Total revenue: {total_revenue}')
-          print(f'  Countries:     {countries}')
-          if int(total_rows) > 0:
-              print('VISUALIZATION CHECK PASSED: Metabase can query sales data')
-          else:
-              print('VISUALIZATION CHECK FAILED: Metabase returned 0 rows')
-              sys.exit(1)
-          "
+              echo "$QUERY_RESULT" | python3 -c 'import json,sys; result=json.loads(sys.stdin.read() or "{}"); "error" in result and (print("Metabase query error: {}".format(result.get("error"))), sys.exit(1)); rows=result.get("data", {}).get("rows", []); rows or (print("VISUALIZATION CHECK FAILED: no data returned from Metabase"), sys.exit(1)); total_rows,total_revenue,countries=rows[0]; print("  Total rows:    {}".format(total_rows)); print("  Total revenue: {}".format(total_revenue)); print("  Countries:     {}".format(countries)); int(total_rows)>0 and print("VISUALIZATION CHECK PASSED: Metabase can query sales data") or (print("VISUALIZATION CHECK FAILED: Metabase returned 0 rows"), sys.exit(1))'
 
       # ── 12. Data flow summary ────────────────────────────────────────────────
       - name: Data flow validation summary
