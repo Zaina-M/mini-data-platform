@@ -152,6 +152,15 @@ jobs:
           echo "All services healthy"
           docker compose ps
 
+      # ── Set up Python and install dependencies ──────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r data-generator/requirements.txt
+
       # ── 4. Verify MinIO buckets ──────────────────────────────────────────────
       - name: Verify MinIO buckets
         run: |
