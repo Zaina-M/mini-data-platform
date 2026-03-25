@@ -6,6 +6,7 @@ using Pandera schemas, then loads it into PostgreSQL for analytics.
 
 """
 
+import os
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
@@ -27,11 +28,14 @@ from airflow import DAG
 setup_logging()
 logger = get_logger("sales_pipeline")
 
+ALERT_EMAIL = os.getenv("ALERT_EMAIL", "").strip()
+
 # DAG default arguments
 default_args = {
     "owner": "data-engineering",
     "depends_on_past": False,
-    "email_on_failure": False,
+    "email": [ALERT_EMAIL] if ALERT_EMAIL else [],
+    "email_on_failure": bool(ALERT_EMAIL),
     "email_on_retry": False,
     "retries": 3,
     "retry_delay": timedelta(minutes=5),
